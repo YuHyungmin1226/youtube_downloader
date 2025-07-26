@@ -3,10 +3,10 @@ import yt_dlp as youtube_dl
 from pathlib import Path
 import re
 import threading
-import platform
-import shutil
 import sys
 from ffmpeg_installer import FFmpegInstaller
+from config import Config
+from utils import check_ffmpeg_installed, open_folder, validate_youtube_url
 
 # PyQt5 관련 import
 from PyQt5.QtWidgets import (
@@ -18,29 +18,18 @@ from PyQt5.QtCore import Qt, pyqtSignal, QObject
 class YouTubeDownloader:
     def __init__(self, url, status_callback=None, progress_callback=None):
         self.url = url
-        self.video_path_template = str(Path.home() / "Videos" / "%(title)s.%(ext)s")
+        self.config = Config()
         self.last_percent = 0
         self.status_callback = status_callback  # 진행상황 텍스트 콜백
         self.progress_callback = progress_callback  # 프로그레스바 콜백
+        self.max_retries = self.config.get_max_retries()
+        self.retry_delay = self.config.get_retry_delay()
 
     def validate_url(self):
-        if not re.match(r'^(https?://)?(www\.)?(youtube\.com|youtu\.be)/', self.url):
-            raise ValueError("유효하지 않은 YouTube URL입니다.")
-        video_id = None
-        patterns = [
-            r'(?:v=|/)([0-9A-Za-z_-]{11}).*',
-            r'shorts/([0-9A-Za-z_-]{11})',
-            r'embed/([0-9A-Za-z_-]{11})',
-            r'v/([0-9A-Za-z_-]{11})'
-        ]
-        for pattern in patterns:
-            match = re.search(pattern, self.url)
-            if match:
-                video_id = match.group(1)
-                break
-        if not video_id:
-            raise ValueError("YouTube 영상 ID를 찾을 수 없습니다.")
-        self.url = f"https://www.youtube.com/watch?v={video_id}"
+        is_valid, result = validate_youtube_url(self.url)
+        if not is_valid:
+            raise ValueError(result)
+        self.url = result
 
     def get_ffmpeg_path(self):
         """FFmpeg 경로를 찾는 메서드 - check_ffmpeg_installed 함수 사용"""
@@ -52,37 +41,75 @@ class YouTubeDownloader:
         except ValueError as e:
             if self.status_callback:
                 self.status_callback(f"오류: {e}")
-            return
+            return False
+        
         ffmpeg_path = self.get_ffmpeg_path()
         if not ffmpeg_path:
             if self.status_callback:
                 self.status_callback("\nFFmpeg가 설치되어 있지 않습니다.")
                 self.status_callback("FFmpeg 설치 버튼을 눌러 설치 후 다운로드 버튼을 다시 눌러주세요.")
-            return
-        videos_dir = Path.home() / "Videos"
-        videos_dir.mkdir(parents=True, exist_ok=True)
-        ydl_opts = {
-            'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/mp4',
-            'outtmpl': self.video_path_template,
+            return False
+        
+        # 다운로드 경로 확인 및 생성
+        download_path = self.config.get_download_path()
+        download_path.mkdir(parents=True, exist_ok=True)
+        
+        # 설정에서 yt-dlp 옵션 가져오기
+        ydl_opts = self.config.get_ydl_opts()
+        ydl_opts.update({
             'progress_hooks': [self.my_hook],
-            'noplaylist': True,
-            'quiet': True,
-            'merge_output_format': 'mp4',
             'ffmpeg_location': ffmpeg_path,
-        }
-        try:
-            with youtube_dl.YoutubeDL(ydl_opts) as ydl:
-                ydl.download([self.url])
-            if self.status_callback:
-                self.status_callback("\n성공: 영상이 성공적으로 다운로드되었습니다.")
-            if self.progress_callback:
-                self.progress_callback(100)
-        except youtube_dl.utils.DownloadError as e:
-            if self.status_callback:
-                self.status_callback(f"\n다운로드 오류: {e}")
-        except Exception as e:
-            if self.status_callback:
-                self.status_callback(f"\n예기치 못한 오류 발생: {e}")
+        })
+        
+        for attempt in range(self.max_retries):
+            try:
+                if self.status_callback:
+                    self.status_callback(f"다운로드 시도 {attempt + 1}/{self.max_retries}...")
+                
+                with youtube_dl.YoutubeDL(ydl_opts) as ydl:
+                    ydl.download([self.url])
+                
+                if self.status_callback:
+                    self.status_callback("\n성공: 영상이 성공적으로 다운로드되었습니다.")
+                if self.progress_callback:
+                    self.progress_callback(100)
+                return True
+                
+            except youtube_dl.utils.DownloadError as e:
+                error_msg = str(e)
+                if self.status_callback:
+                    self.status_callback(f"\n다운로드 오류 (시도 {attempt + 1}/{self.max_retries}): {error_msg}")
+                
+                # 특정 오류에 대한 구체적인 처리
+                if "Video unavailable" in error_msg:
+                    if self.status_callback:
+                        self.status_callback("영상이 비공개이거나 삭제되었습니다.")
+                    return False
+                elif "Sign in" in error_msg:
+                    if self.status_callback:
+                        self.status_callback("연령 제한 영상입니다. 로그인이 필요합니다.")
+                    return False
+                elif "copyright" in error_msg.lower():
+                    if self.status_callback:
+                        self.status_callback("저작권 문제로 다운로드할 수 없습니다.")
+                    return False
+                
+                if attempt < self.max_retries - 1:
+                    if self.status_callback:
+                        self.status_callback(f"{self.retry_delay}초 후 재시도합니다...")
+                    import time
+                    time.sleep(self.retry_delay)
+                else:
+                    if self.status_callback:
+                        self.status_callback("최대 재시도 횟수를 초과했습니다.")
+                    return False
+                    
+            except Exception as e:
+                if self.status_callback:
+                    self.status_callback(f"\n예기치 못한 오류 발생: {e}")
+                return False
+        
+        return False
 
     def my_hook(self, d):
         if d['status'] == 'downloading':
@@ -91,95 +118,16 @@ class YouTubeDownloader:
                 percent = float(percent_str.strip('%'))
             except:
                 percent = 0
-            if self.progress_callback:
-                self.progress_callback(percent)
+            
+            # 성능 최적화: 진행률 업데이트 빈도 조절
+            if self.config.should_show_progress() and (abs(percent - self.last_percent) >= 1.0 or percent == 100):
+                if self.progress_callback:
+                    self.progress_callback(percent)
+                self.last_percent = percent
+            
             if self.status_callback:
                 status = f"{percent_str} of {d.get('_total_bytes_str', '')} at {d.get('_speed_str', '')} ETA {d.get('_eta_str', '')}"
                 self.status_callback(status, replace=True)
-
-def check_ffmpeg_installed():
-    """FFmpeg 설치 여부를 다양한 경로와 환경변수로 확인"""
-    import subprocess
-    
-    # 디버깅을 위한 로그 함수
-    def debug_log(msg):
-        print(f"[FFmpeg Debug] {msg}")
-    
-    debug_log("FFmpeg 감지 시작...")
-    
-    # 1. shutil.which() 사용
-    if platform.system() == "Windows":
-        ffmpeg_path = shutil.which("ffmpeg.exe")
-        debug_log(f"shutil.which('ffmpeg.exe'): {ffmpeg_path}")
-        if not ffmpeg_path:
-            ffmpeg_path = shutil.which("ffmpeg")
-            debug_log(f"shutil.which('ffmpeg'): {ffmpeg_path}")
-    else:
-        ffmpeg_path = shutil.which("ffmpeg")
-        debug_log(f"shutil.which('ffmpeg'): {ffmpeg_path}")
-    
-    # 2. macOS Homebrew 등 추가 경로
-    if not ffmpeg_path and platform.system() == "Darwin":
-        if os.path.exists("/opt/homebrew/bin/ffmpeg"):
-            ffmpeg_path = "/opt/homebrew/bin/ffmpeg"
-            debug_log(f"Found in /opt/homebrew/bin/ffmpeg")
-        elif os.path.exists("/usr/local/bin/ffmpeg"):
-            ffmpeg_path = "/usr/local/bin/ffmpeg"
-            debug_log(f"Found in /usr/local/bin/ffmpeg")
-    
-    # 3. Windows 일반 경로
-    if not ffmpeg_path and platform.system() == "Windows":
-        possible_paths = [
-            "C:\\ffmpeg\\bin\\ffmpeg.exe",
-            "C:\\Program Files\\ffmpeg\\bin\\ffmpeg.exe",
-            "C:\\Program Files (x86)\\ffmpeg\\bin\\ffmpeg.exe",
-            str(Path.home() / "ffmpeg" / "bin" / "ffmpeg.exe"),
-            "C:\\ffmpeg\\ffmpeg.exe",
-            "C:\\Program Files\\ffmpeg\\ffmpeg.exe",
-            "C:\\Program Files (x86)\\ffmpeg\\ffmpeg.exe"
-        ]
-        for path in possible_paths:
-            if os.path.exists(path):
-                ffmpeg_path = path
-                debug_log(f"Found in: {path}")
-                break
-    
-    # 4. 실제 실행 테스트
-    if ffmpeg_path:
-        try:
-            debug_log(f"Testing execution: {ffmpeg_path}")
-            result = subprocess.run([ffmpeg_path, "-version"], capture_output=True, text=True, timeout=3)
-            if result.returncode == 0:
-                debug_log(f"FFmpeg 실행 성공: {ffmpeg_path}")
-                return ffmpeg_path
-            else:
-                debug_log(f"FFmpeg 실행 실패 (return code: {result.returncode})")
-        except Exception as e:
-            debug_log(f"FFmpeg 실행 예외: {e}")
-    
-    # 5. 환경변수 PATH 직접 탐색
-    debug_log("PATH 환경변수 직접 탐색 시작...")
-    path_dirs = os.environ.get("PATH", "").split(os.pathsep)
-    debug_log(f"PATH 디렉토리 수: {len(path_dirs)}")
-    
-    for p in path_dirs:
-        if not p.strip():
-            continue
-        candidate = os.path.join(p, "ffmpeg.exe" if platform.system() == "Windows" else "ffmpeg")
-        if os.path.exists(candidate):
-            debug_log(f"Found candidate: {candidate}")
-            try:
-                result = subprocess.run([candidate, "-version"], capture_output=True, text=True, timeout=3)
-                if result.returncode == 0:
-                    debug_log(f"FFmpeg 실행 성공: {candidate}")
-                    return candidate
-                else:
-                    debug_log(f"FFmpeg 실행 실패: {candidate} (return code: {result.returncode})")
-            except Exception as e:
-                debug_log(f"FFmpeg 실행 예외: {candidate} - {e}")
-    
-    debug_log("FFmpeg를 찾을 수 없습니다.")
-    return None
 
 # 기존 get_ffmpeg_path를 check_ffmpeg_installed로 대체
 YouTubeDownloader.get_ffmpeg_path = staticmethod(check_ffmpeg_installed)
@@ -194,6 +142,10 @@ class YouTubeDownloaderWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("YouTube 영상 다운로드 도구 (PyQt5)")
         self.setFixedSize(700, 400)
+        
+        # 설정 초기화
+        self.config = Config()
+        
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
         self.layout = QVBoxLayout(self.central_widget)
@@ -211,10 +163,12 @@ class YouTubeDownloaderWindow(QMainWindow):
         self.download_btn = QPushButton("영상 다운로드")
         self.ffmpeg_btn = QPushButton("FFmpeg 설치")
         self.open_folder_btn = QPushButton("저장 폴더 열기")
+        self.settings_btn = QPushButton("설정")
         btn_layout.addWidget(self.paste_btn)
         btn_layout.addWidget(self.download_btn)
         btn_layout.addWidget(self.ffmpeg_btn)
         btn_layout.addWidget(self.open_folder_btn)
+        btn_layout.addWidget(self.settings_btn)
         self.layout.addLayout(btn_layout)
 
         # 진행바
@@ -237,6 +191,7 @@ class YouTubeDownloaderWindow(QMainWindow):
         self.download_btn.clicked.connect(self.on_download)
         self.ffmpeg_btn.clicked.connect(self.on_install_ffmpeg)
         self.open_folder_btn.clicked.connect(self.on_open_folder)
+        self.settings_btn.clicked.connect(self.on_open_settings)
 
         self.set_status("YouTube 링크를 입력하고 다운로드 버튼을 누르세요.")
 
@@ -276,7 +231,14 @@ class YouTubeDownloaderWindow(QMainWindow):
                 status_callback=self.thread_safe_status,
                 progress_callback=self.thread_safe_progress
             )
-            downloader.download_video()
+            success = downloader.download_video()
+            if success:
+                self.set_status("다운로드가 완료되었습니다.")
+                # 자동 폴더 열기 설정이 활성화된 경우
+                if self.config.should_auto_open_folder():
+                    self.on_open_folder()
+            else:
+                self.set_status("다운로드에 실패했습니다.")
         finally:
             self.download_btn.setEnabled(True)
 
@@ -292,6 +254,7 @@ class YouTubeDownloaderWindow(QMainWindow):
             QMessageBox.information(self, "안내", f"이미 FFmpeg가 설치되어 있습니다:\n{ffmpeg_path}")
             return
         # 디버깅 정보 출력
+        import platform
         debug_info = f"PATH: {os.environ.get('PATH')}\n"
         debug_info += f"홈 디렉토리: {Path.home()}\n"
         debug_info += "일반 경로 체크 결과: "
@@ -331,16 +294,109 @@ class YouTubeDownloaderWindow(QMainWindow):
         threading.Thread(target=install_thread, daemon=True).start()
 
     def on_open_folder(self):
-        folder = str(Path.home() / "Videos")
-        if os.path.exists(folder):
-            if platform.system() == 'Darwin':
-                os.system(f'open "{folder}"')
-            elif platform.system() == 'Windows':
-                os.startfile(folder)
-            else:
-                os.system(f'xdg-open "{folder}"')
+        folder = str(self.config.get_download_path())
+        if open_folder(folder):
+            self.set_status(f"저장 폴더를 열었습니다: {folder}")
         else:
-            QMessageBox.information(self, "안내", "Videos 폴더가 존재하지 않습니다.")
+            QMessageBox.information(self, "안내", "저장 폴더를 열 수 없습니다.")
+
+    def on_open_settings(self):
+        """설정 창 열기"""
+        from PyQt5.QtWidgets import QDialog, QFormLayout, QComboBox, QCheckBox, QSpinBox
+        
+        class SettingsDialog(QDialog):
+            def __init__(self, config, parent=None):
+                super().__init__(parent)
+                self.config = config
+                self.setWindowTitle("설정")
+                self.setFixedSize(400, 500)
+                self.setup_ui()
+            
+            def setup_ui(self):
+                layout = QVBoxLayout(self)
+                form_layout = QFormLayout()
+                
+                # 다운로드 경로
+                self.path_edit = QLineEdit(str(self.config.get_download_path()))
+                self.path_btn = QPushButton("찾아보기")
+                path_layout = QHBoxLayout()
+                path_layout.addWidget(self.path_edit)
+                path_layout.addWidget(self.path_btn)
+                form_layout.addRow("다운로드 경로:", path_layout)
+                
+                # 비디오 형식
+                self.format_combo = QComboBox()
+                self.format_combo.addItems(["mp4", "webm", "mkv"])
+                self.format_combo.setCurrentText(self.config.get_video_format())
+                form_layout.addRow("비디오 형식:", self.format_combo)
+                
+                # 품질
+                self.quality_combo = QComboBox()
+                self.quality_combo.addItems(["best", "worst"])
+                self.quality_combo.setCurrentText(self.config.get_quality())
+                form_layout.addRow("품질:", self.quality_combo)
+                
+                # 오디오만 다운로드
+                self.audio_only_check = QCheckBox()
+                self.audio_only_check.setChecked(self.config.is_audio_only())
+                form_layout.addRow("오디오만 다운로드:", self.audio_only_check)
+                
+                # 자막 다운로드
+                self.subtitle_check = QCheckBox()
+                self.subtitle_check.setChecked(self.config.get("subtitle_download", False))
+                form_layout.addRow("자막 다운로드:", self.subtitle_check)
+                
+                # 자동 폴더 열기
+                self.auto_open_check = QCheckBox()
+                self.auto_open_check.setChecked(self.config.should_auto_open_folder())
+                form_layout.addRow("다운로드 후 폴더 자동 열기:", self.auto_open_check)
+                
+                # 최대 재시도 횟수
+                self.retry_spin = QSpinBox()
+                self.retry_spin.setRange(1, 10)
+                self.retry_spin.setValue(self.config.get_max_retries())
+                form_layout.addRow("최대 재시도 횟수:", self.retry_spin)
+                
+                # 재시도 지연 시간
+                self.delay_spin = QSpinBox()
+                self.delay_spin.setRange(1, 30)
+                self.delay_spin.setValue(self.config.get_retry_delay())
+                form_layout.addRow("재시도 지연 시간(초):", self.delay_spin)
+                
+                layout.addLayout(form_layout)
+                
+                # 버튼
+                btn_layout = QHBoxLayout()
+                self.save_btn = QPushButton("저장")
+                self.cancel_btn = QPushButton("취소")
+                btn_layout.addWidget(self.save_btn)
+                btn_layout.addWidget(self.cancel_btn)
+                layout.addLayout(btn_layout)
+                
+                # 이벤트 연결
+                self.path_btn.clicked.connect(self.browse_path)
+                self.save_btn.clicked.connect(self.save_settings)
+                self.cancel_btn.clicked.connect(self.reject)
+            
+            def browse_path(self):
+                folder = QFileDialog.getExistingDirectory(self, "다운로드 경로 선택")
+                if folder:
+                    self.path_edit.setText(folder)
+            
+            def save_settings(self):
+                self.config.set("download_path", self.path_edit.text())
+                self.config.set("video_format", self.format_combo.currentText())
+                self.config.set("quality", self.quality_combo.currentText())
+                self.config.set("download_audio_only", self.audio_only_check.isChecked())
+                self.config.set("subtitle_download", self.subtitle_check.isChecked())
+                self.config.set("auto_open_folder", self.auto_open_check.isChecked())
+                self.config.set("max_retries", self.retry_spin.value())
+                self.config.set("retry_delay", self.delay_spin.value())
+                self.accept()
+        
+        dialog = SettingsDialog(self.config, self)
+        if dialog.exec_() == QDialog.Accepted:
+            self.set_status("설정이 저장되었습니다.")
 
 
 def main():

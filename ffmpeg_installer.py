@@ -10,6 +10,7 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import messagebox, ttk
 import threading
+from utils import check_ffmpeg_installed, get_system_info
 
 class FFmpegInstaller:
     def __init__(self, status_callback=None, progress_callback=None):
@@ -185,10 +186,7 @@ class FFmpegInstaller:
     
     def check_ffmpeg(self):
         """FFmpeg 설치 여부 확인"""
-        ffmpeg_path = shutil.which("ffmpeg")
-        if ffmpeg_path:
-            return ffmpeg_path
-        return None
+        return check_ffmpeg_installed()
 
 class FFmpegInstallerGUI:
     def __init__(self, root):
@@ -204,8 +202,9 @@ class FFmpegInstallerGUI:
         title_label.pack(pady=20)
         
         # 시스템 정보
-        system_info = f"운영체제: {platform.system()} {platform.release()}"
-        arch_info = f"아키텍처: {platform.machine()}"
+        sys_info = get_system_info()
+        system_info = f"운영체제: {sys_info['os']} {sys_info['os_version']}"
+        arch_info = f"아키텍처: {sys_info['architecture']}"
         
         tk.Label(self.root, text=system_info).pack()
         tk.Label(self.root, text=arch_info).pack(pady=(0, 20))

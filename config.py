@@ -12,7 +12,19 @@ class Config:
             "video_format": "mp4",
             "quality": "best",
             "window_size": [700, 400],
-            "auto_paste": True
+            "auto_paste": True,
+            "max_retries": 3,
+            "retry_delay": 3,
+            "show_progress": True,
+            "auto_open_folder": False,
+            "download_audio_only": False,
+            "preferred_quality": "1080p",
+            "use_cookies": False,
+            "cookies_file": "",
+            "subtitle_download": False,
+            "subtitle_language": "ko",
+            "playlist_download": False,
+            "max_playlist_items": 10
         }
         self.config = self.load_config()
     
@@ -58,4 +70,67 @@ class Config:
     
     def set_download_path(self, path):
         """다운로드 경로 설정"""
-        self.set("download_path", str(path)) 
+        self.set("download_path", str(path))
+    
+    def get_video_format(self):
+        """비디오 형식 가져오기"""
+        return self.get("video_format", "mp4")
+    
+    def get_quality(self):
+        """품질 설정 가져오기"""
+        return self.get("quality", "best")
+    
+    def get_max_retries(self):
+        """최대 재시도 횟수 가져오기"""
+        return self.get("max_retries", 3)
+    
+    def get_retry_delay(self):
+        """재시도 지연 시간 가져오기"""
+        return self.get("retry_delay", 3)
+    
+    def is_audio_only(self):
+        """오디오만 다운로드 여부"""
+        return self.get("download_audio_only", False)
+    
+    def get_preferred_quality(self):
+        """선호 품질 가져오기"""
+        return self.get("preferred_quality", "1080p")
+    
+    def should_show_progress(self):
+        """진행률 표시 여부"""
+        return self.get("show_progress", True)
+    
+    def should_auto_open_folder(self):
+        """다운로드 후 폴더 자동 열기 여부"""
+        return self.get("auto_open_folder", False)
+    
+    def get_ydl_opts(self):
+        """yt-dlp 옵션 딕셔너리 반환"""
+        format_str = "bestaudio[ext=m4a]/best[ext=m4a]/best" if self.is_audio_only() else f'bestvideo[ext={self.get_video_format()}]+bestaudio[ext=m4a]/{self.get_video_format()}'
+        
+        opts = {
+            'format': format_str,
+            'outtmpl': str(self.get_download_path() / "%(title)s.%(ext)s"),
+            'noplaylist': not self.get("playlist_download", False),
+            'quiet': True,
+            'merge_output_format': self.get_video_format(),
+            'retries': self.get_max_retries(),
+            'fragment_retries': self.get_max_retries(),
+            'ignoreerrors': False,
+        }
+        
+        # 자막 다운로드 설정
+        if self.get("subtitle_download", False):
+            opts['writesubtitles'] = True
+            opts['writeautomaticsub'] = True
+            opts['subtitleslangs'] = [self.get("subtitle_language", "ko")]
+        
+        # 쿠키 파일 설정
+        if self.get("use_cookies", False) and self.get("cookies_file"):
+            opts['cookiefile'] = self.get("cookies_file")
+        
+        # 재생목록 제한
+        if self.get("playlist_download", False):
+            opts['playlist_items'] = f"1-{self.get('max_playlist_items', 10)}"
+        
+        return opts 
