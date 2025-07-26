@@ -43,37 +43,8 @@ class YouTubeDownloader:
         self.url = f"https://www.youtube.com/watch?v={video_id}"
 
     def get_ffmpeg_path(self):
-        # Windows에서 ffmpeg.exe 찾기
-        if platform.system() == "Windows":
-            ffmpeg_path = shutil.which("ffmpeg.exe")
-            if not ffmpeg_path:
-                ffmpeg_path = shutil.which("ffmpeg")
-        else:
-            # Unix 계열에서 ffmpeg 찾기
-            ffmpeg_path = shutil.which("ffmpeg")
-            
-        # 추가 경로 확인 (macOS Homebrew 등)
-        if not ffmpeg_path and platform.system() == "Darwin":
-            if os.path.exists("/opt/homebrew/bin/ffmpeg"):
-                ffmpeg_path = "/opt/homebrew/bin/ffmpeg"
-            elif os.path.exists("/usr/local/bin/ffmpeg"):
-                ffmpeg_path = "/usr/local/bin/ffmpeg"
-                
-        # Windows에서 추가 경로 확인
-        if not ffmpeg_path and platform.system() == "Windows":
-            # 일반적인 설치 경로들 확인
-            possible_paths = [
-                "C:\\ffmpeg\\bin\\ffmpeg.exe",
-                "C:\\Program Files\\ffmpeg\\bin\\ffmpeg.exe",
-                "C:\\Program Files (x86)\\ffmpeg\\bin\\ffmpeg.exe",
-                str(Path.home() / "ffmpeg" / "bin" / "ffmpeg.exe")
-            ]
-            for path in possible_paths:
-                if os.path.exists(path):
-                    ffmpeg_path = path
-                    break
-                    
-        return ffmpeg_path
+        """FFmpeg 경로를 찾는 메서드 - check_ffmpeg_installed 함수 사용"""
+        return check_ffmpeg_installed()
 
     def download_video(self):
         try:
