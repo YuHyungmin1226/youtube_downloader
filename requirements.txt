@@ -1,4 +1,12 @@
-yt-dlp>=2024.1.7
-PyQt5>=5.15.9
+# YouTube 다운로더 핵심 의존성
+yt-dlp>=2025.7.21
+PyQt5>=5.15.11
 requests>=2.31.0
-pathlib2>=2.3.7; python_version < "3.4" 
+
+# 추가 유틸리티 (선택사항)
+beautifulsoup4>=4.12.2
+colorama>=0.4.6
+filetype>=1.2.0
+
+# 개발 도구 (선택사항)
+python-dotenv>=1.0.0 
