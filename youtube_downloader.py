@@ -9,11 +9,11 @@ from config import Config
 from utils import check_ffmpeg_installed, open_folder, validate_youtube_url
 
 # PyQt5 관련 import
-from PyQt5.QtWidgets import (
+from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
-    QTextEdit, QProgressBar, QMessageBox, QFileDialog
+    QTextEdit, QProgressBar, QMessageBox, QFileDialog, QDialog, QFormLayout, QComboBox, QCheckBox, QSpinBox
 )
-from PyQt5.QtCore import Qt, pyqtSignal, QObject
+from PySide6.QtCore import Qt, Signal as pyqtSignal, QObject
 
 class YouTubeDownloader:
     def __init__(self, url, status_callback=None, progress_callback=None):
