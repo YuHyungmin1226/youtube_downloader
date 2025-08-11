@@ -8,7 +8,7 @@ from ffmpeg_installer import FFmpegInstaller
 from config import Config
 from utils import check_ffmpeg_installed, open_folder, validate_youtube_url
 
-# PyQt5 관련 import
+# PySide6 관련 import
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
     QTextEdit, QProgressBar, QMessageBox, QFileDialog, QDialog, QFormLayout, QComboBox, QCheckBox, QSpinBox
@@ -116,7 +116,7 @@ class YouTubeDownloader:
             percent_str = re.sub(r'\x1b\[[0-9;]*m', '', d.get('_percent_str', '0%'))
             try:
                 percent = float(percent_str.strip('%'))
-            except:
+            except (ValueError, AttributeError):
                 percent = 0
             
             # 성능 최적화: 진행률 업데이트 빈도 조절
@@ -129,10 +129,7 @@ class YouTubeDownloader:
                 status = f"{percent_str} of {d.get('_total_bytes_str', '')} at {d.get('_speed_str', '')} ETA {d.get('_eta_str', '')}"
                 self.status_callback(status, replace=True)
 
-# 기존 get_ffmpeg_path를 check_ffmpeg_installed로 대체
-YouTubeDownloader.get_ffmpeg_path = staticmethod(check_ffmpeg_installed)
-
-# PyQt5용 시그널 클래스
+# PySide6용 시그널 클래스
 class SignalProxy(QObject):
     status_signal = pyqtSignal(str, bool)
     progress_signal = pyqtSignal(float)
@@ -140,7 +137,7 @@ class SignalProxy(QObject):
 class YouTubeDownloaderWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("YouTube 영상 다운로드 도구 (PyQt5)")
+        self.setWindowTitle("YouTube 영상 다운로드 도구 (PySide6)")
         self.setFixedSize(700, 400)
         
         # 설정 초기화
@@ -198,13 +195,13 @@ class YouTubeDownloaderWindow(QMainWindow):
     def set_status(self, msg, replace=False):
         if replace:
             cursor = self.status_text.textCursor()
-            cursor.movePosition(cursor.End)
-            cursor.select(cursor.BlockUnderCursor)
+            cursor.movePosition(cursor.MoveOperation.End)
+            cursor.select(cursor.SelectionType.BlockUnderCursor)
             cursor.removeSelectedText()
             cursor.deletePreviousChar()
             self.status_text.setTextCursor(cursor)
         self.status_text.append(msg)
-        self.status_text.moveCursor(self.status_text.textCursor().End)
+        self.status_text.moveCursor(self.status_text.textCursor().MoveOperation.End)
 
     def set_progress(self, percent):
         self.progress.setValue(int(percent))
@@ -302,7 +299,6 @@ class YouTubeDownloaderWindow(QMainWindow):
 
     def on_open_settings(self):
         """설정 창 열기"""
-        from PyQt5.QtWidgets import QDialog, QFormLayout, QComboBox, QCheckBox, QSpinBox
         
         class SettingsDialog(QDialog):
             def __init__(self, config, parent=None):
@@ -395,7 +391,7 @@ class YouTubeDownloaderWindow(QMainWindow):
                 self.accept()
         
         dialog = SettingsDialog(self.config, self)
-        if dialog.exec_() == QDialog.Accepted:
+        if dialog.exec() == QDialog.Accepted:
             self.set_status("설정이 저장되었습니다.")
 
 
@@ -403,7 +399,8 @@ def main():
     app = QApplication(sys.argv)
     win = YouTubeDownloaderWindow()
     win.show()
-    sys.exit(app.exec_())
+    sys.exit(app.exec())
+
 
 if __name__ == "__main__":
     main()
