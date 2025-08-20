@@ -7,12 +7,13 @@ import shutil
 import subprocess
 from pathlib import Path
 
-def check_ffmpeg_installed():
+def check_ffmpeg_installed(debug=False):
     """FFmpeg 설치 여부를 다양한 경로와 환경변수로 확인"""
     
     # 디버깅을 위한 로그 함수
     def debug_log(msg):
-        print(f"[FFmpeg Debug] {msg}")
+        if debug:
+            print(f"[FFmpeg Debug] {msg}")
     
     debug_log("FFmpeg 감지 시작...")
     
@@ -57,12 +58,14 @@ def check_ffmpeg_installed():
     if ffmpeg_path:
         try:
             debug_log(f"Testing execution: {ffmpeg_path}")
-            result = subprocess.run([ffmpeg_path, "-version"], capture_output=True, text=True, timeout=3)
+            result = subprocess.run([ffmpeg_path, "-version"], capture_output=True, text=True, timeout=5)
             if result.returncode == 0:
                 debug_log(f"FFmpeg 실행 성공: {ffmpeg_path}")
                 return ffmpeg_path
             else:
                 debug_log(f"FFmpeg 실행 실패 (return code: {result.returncode})")
+        except subprocess.TimeoutExpired:
+            debug_log(f"FFmpeg 실행 시간 초과: {ffmpeg_path}")
         except Exception as e:
             debug_log(f"FFmpeg 실행 예외: {e}")
     
@@ -78,12 +81,14 @@ def check_ffmpeg_installed():
         if os.path.exists(candidate):
             debug_log(f"Found candidate: {candidate}")
             try:
-                result = subprocess.run([candidate, "-version"], capture_output=True, text=True, timeout=3)
+                result = subprocess.run([candidate, "-version"], capture_output=True, text=True, timeout=5)
                 if result.returncode == 0:
                     debug_log(f"FFmpeg 실행 성공: {candidate}")
                     return candidate
                 else:
                     debug_log(f"FFmpeg 실행 실패: {candidate} (return code: {result.returncode})")
+            except subprocess.TimeoutExpired:
+                debug_log(f"FFmpeg 실행 시간 초과: {candidate}")
             except Exception as e:
                 debug_log(f"FFmpeg 실행 예외: {candidate} - {e}")
     
@@ -123,6 +128,12 @@ def validate_youtube_url(url):
     """YouTube URL 유효성 검증"""
     import re
     
+    if not url or not url.strip():
+        return False, "URL이 입력되지 않았습니다."
+    
+    url = url.strip()
+    
+    # 기본 URL 패턴 검증
     if not re.match(r'^(https?://)?(www\.)?(youtube\.com|youtu\.be)/', url):
         return False, "유효하지 않은 YouTube URL입니다."
     
@@ -143,7 +154,34 @@ def validate_youtube_url(url):
     if not video_id:
         return False, "YouTube 영상 ID를 찾을 수 없습니다."
     
-    return True, f"https://www.youtube.com/watch?v={video_id}"
+    # 영상 ID 형식 검증 (YouTube 영상 ID는 11자리)
+    if len(video_id) != 11:
+        return False, "유효하지 않은 YouTube 영상 ID입니다."
+    
+    # 정규화된 URL 반환
+    normalized_url = f"https://www.youtube.com/watch?v={video_id}"
+    
+    return True, normalized_url
+
+def check_video_availability(url):
+    """YouTube 영상의 실제 존재 여부 확인 (선택적 기능)"""
+    try:
+        import yt_dlp
+        ydl_opts = {
+            'quiet': True,
+            'no_warnings': True,
+            'extract_flat': True,
+        }
+        
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            if info:
+                return True, "영상이 존재합니다."
+            else:
+                return False, "영상을 찾을 수 없습니다."
+    except Exception as e:
+        # 네트워크 오류 등으로 확인할 수 없는 경우
+        return None, f"영상 존재 여부를 확인할 수 없습니다: {e}"
 
 def get_system_info():
     """시스템 정보 반환"""

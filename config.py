@@ -3,10 +3,15 @@ YouTube 다운로더 설정 파일
 """
 import json
 from pathlib import Path
+import platform
 
 class Config:
     def __init__(self):
-        self.config_file = Path.home() / ".youtube_downloader_config.json"
+        # Windows에서는 숨김 파일 대신 일반 파일로 저장
+        if platform.system() == "Windows":
+            self.config_file = Path.home() / "youtube_downloader_config.json"
+        else:
+            self.config_file = Path.home() / ".youtube_downloader_config.json"
         self.default_config = {
             "download_path": str(Path.home() / "Videos"),
             "video_format": "mp4",
@@ -41,6 +46,16 @@ class Config:
                     return config
             else:
                 return self.default_config.copy()
+        except (json.JSONDecodeError, UnicodeDecodeError) as e:
+            # 설정 파일이 손상된 경우 백업 후 기본값 사용
+            try:
+                if self.config_file.exists():
+                    backup_file = self.config_file.with_suffix('.json.bak')
+                    self.config_file.rename(backup_file)
+                    print(f"손상된 설정 파일을 백업했습니다: {backup_file}")
+            except:
+                pass
+            return self.default_config.copy()
         except Exception:
             return self.default_config.copy()
     

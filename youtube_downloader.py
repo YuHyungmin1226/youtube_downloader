@@ -4,6 +4,7 @@ from pathlib import Path
 import re
 import threading
 import sys
+import time
 from ffmpeg_installer import FFmpegInstaller
 from config import Config
 from utils import check_ffmpeg_installed, open_folder, validate_youtube_url
@@ -33,7 +34,7 @@ class YouTubeDownloader:
 
     def get_ffmpeg_path(self):
         """FFmpeg 경로를 찾는 메서드 - check_ffmpeg_installed 함수 사용"""
-        return check_ffmpeg_installed()
+        return check_ffmpeg_installed(debug=False)  # 일반 검증 시에는 디버그 비활성화
 
     def download_video(self):
         try:
@@ -52,7 +53,12 @@ class YouTubeDownloader:
         
         # 다운로드 경로 확인 및 생성
         download_path = self.config.get_download_path()
-        download_path.mkdir(parents=True, exist_ok=True)
+        try:
+            download_path.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            if self.status_callback:
+                self.status_callback(f"다운로드 경로 생성 실패: {e}")
+            return False
         
         # 설정에서 yt-dlp 옵션 가져오기
         ydl_opts = self.config.get_ydl_opts()
@@ -61,13 +67,14 @@ class YouTubeDownloader:
             'ffmpeg_location': ffmpeg_path,
         })
         
+        ydl = None
         for attempt in range(self.max_retries):
             try:
                 if self.status_callback:
                     self.status_callback(f"다운로드 시도 {attempt + 1}/{self.max_retries}...")
                 
-                with youtube_dl.YoutubeDL(ydl_opts) as ydl:
-                    ydl.download([self.url])
+                ydl = youtube_dl.YoutubeDL(ydl_opts)
+                ydl.download([self.url])
                 
                 if self.status_callback:
                     self.status_callback("\n성공: 영상이 성공적으로 다운로드되었습니다.")
@@ -93,21 +100,51 @@ class YouTubeDownloader:
                     if self.status_callback:
                         self.status_callback("저작권 문제로 다운로드할 수 없습니다.")
                     return False
+                elif "This video is not available" in error_msg:
+                    if self.status_callback:
+                        self.status_callback("이 영상은 현재 사용할 수 없습니다.")
+                    return False
+                elif "Video is private" in error_msg:
+                    if self.status_callback:
+                        self.status_callback("비공개 영상입니다.")
+                    return False
+                elif "Video is age restricted" in error_msg:
+                    if self.status_callback:
+                        self.status_callback("연령 제한 영상입니다. 쿠키 파일을 사용해보세요.")
+                    return False
                 
                 if attempt < self.max_retries - 1:
                     if self.status_callback:
                         self.status_callback(f"{self.retry_delay}초 후 재시도합니다...")
-                    import time
                     time.sleep(self.retry_delay)
                 else:
                     if self.status_callback:
                         self.status_callback("최대 재시도 횟수를 초과했습니다.")
                     return False
                     
+            except youtube_dl.utils.ExtractorError as e:
+                if self.status_callback:
+                    self.status_callback(f"\n영상 정보 추출 오류: {e}")
+                return False
+            except youtube_dl.utils.UnsupportedError as e:
+                if self.status_callback:
+                    self.status_callback(f"\n지원하지 않는 영상 형식: {e}")
+                return False
+            except youtube_dl.utils.GeoRestrictedError as e:
+                if self.status_callback:
+                    self.status_callback(f"\n지역 제한 영상: {e}")
+                return False
             except Exception as e:
                 if self.status_callback:
-                    self.status_callback(f"\n예기치 못한 오류 발생: {e}")
+                    self.status_callback(f"\n예기치 못한 오류 발생: {type(e).__name__}: {e}")
                 return False
+            finally:
+                # 리소스 정리
+                if ydl:
+                    try:
+                        ydl.close()
+                    except:
+                        pass
         
         return False
 
@@ -119,8 +156,8 @@ class YouTubeDownloader:
             except (ValueError, AttributeError):
                 percent = 0
             
-            # 성능 최적화: 진행률 업데이트 빈도 조절
-            if self.config.should_show_progress() and (abs(percent - self.last_percent) >= 1.0 or percent == 100):
+            # 성능 최적화: 진행률 업데이트 빈도 조절 (2%마다 또는 100%일 때)
+            if self.config.should_show_progress() and (abs(percent - self.last_percent) >= 2.0 or percent == 100):
                 if self.progress_callback:
                     self.progress_callback(percent)
                 self.last_percent = percent
@@ -128,6 +165,11 @@ class YouTubeDownloader:
             if self.status_callback:
                 status = f"{percent_str} of {d.get('_total_bytes_str', '')} at {d.get('_speed_str', '')} ETA {d.get('_eta_str', '')}"
                 self.status_callback(status, replace=True)
+        elif d['status'] == 'finished':
+            if self.status_callback:
+                self.status_callback("다운로드 완료, 처리 중...")
+            if self.progress_callback:
+                self.progress_callback(100)
 
 # PySide6용 시그널 클래스
 class SignalProxy(QObject):
@@ -193,18 +235,27 @@ class YouTubeDownloaderWindow(QMainWindow):
         self.set_status("YouTube 링크를 입력하고 다운로드 버튼을 누르세요.")
 
     def set_status(self, msg, replace=False):
-        if replace:
-            cursor = self.status_text.textCursor()
-            cursor.movePosition(cursor.MoveOperation.End)
-            cursor.select(cursor.SelectionType.BlockUnderCursor)
-            cursor.removeSelectedText()
-            cursor.deletePreviousChar()
-            self.status_text.setTextCursor(cursor)
-        self.status_text.append(msg)
-        self.status_text.moveCursor(self.status_text.textCursor().MoveOperation.End)
+        """스레드 안전한 상태 메시지 업데이트"""
+        try:
+            if replace:
+                cursor = self.status_text.textCursor()
+                cursor.movePosition(cursor.MoveOperation.End)
+                cursor.select(cursor.SelectionType.BlockUnderCursor)
+                cursor.removeSelectedText()
+                cursor.deletePreviousChar()
+                self.status_text.setTextCursor(cursor)
+            self.status_text.append(msg)
+            self.status_text.moveCursor(self.status_text.textCursor().MoveOperation.End)
+        except Exception as e:
+            # GUI 업데이트 실패 시 콘솔에 출력
+            print(f"GUI 업데이트 실패: {e}")
 
     def set_progress(self, percent):
-        self.progress.setValue(int(percent))
+        """스레드 안전한 진행률 업데이트"""
+        try:
+            self.progress.setValue(int(percent))
+        except Exception as e:
+            print(f"진행률 업데이트 실패: {e}")
 
     def on_paste_link(self):
         clipboard = QApplication.clipboard()
@@ -246,33 +297,29 @@ class YouTubeDownloaderWindow(QMainWindow):
         self.signals.progress_signal.emit(percent)
 
     def on_install_ffmpeg(self):
-        ffmpeg_path = check_ffmpeg_installed()
+        ffmpeg_path = check_ffmpeg_installed(debug=True)  # 디버그 모드 활성화
         if ffmpeg_path:
             QMessageBox.information(self, "안내", f"이미 FFmpeg가 설치되어 있습니다:\n{ffmpeg_path}")
             return
-        # 디버깅 정보 출력
-        import platform
-        debug_info = f"PATH: {os.environ.get('PATH')}\n"
-        debug_info += f"홈 디렉토리: {Path.home()}\n"
-        debug_info += "일반 경로 체크 결과: "
-        if platform.system() == "Windows":
-            debug_info += str([p for p in [
-                'C:\\ffmpeg\\bin\\ffmpeg.exe',
-                'C:\\Program Files\\ffmpeg\\bin\\ffmpeg.exe',
-                'C:\\Program Files (x86)\\ffmpeg\\bin\\ffmpeg.exe',
-                str(Path.home() / 'ffmpeg' / 'bin' / 'ffmpeg.exe')
-            ] if os.path.exists(p)])
-        elif platform.system() == "Darwin":
-            debug_info += str([p for p in [
-                '/opt/homebrew/bin/ffmpeg',
-                '/usr/local/bin/ffmpeg'
-            ] if os.path.exists(p)])
-        else:
-            debug_info += "(리눅스는 기본적으로 which만 사용)"
-        self.set_status(f"[FFmpeg 디버깅 정보]\n{debug_info}")
+        
+        # 설치 전 확인
+        reply = QMessageBox.question(
+            self, 
+            "FFmpeg 설치", 
+            "FFmpeg를 다운로드하고 설치하시겠습니까?\n\n"
+            "• 인터넷 연결이 필요합니다\n"
+            "• 약 50-100MB의 다운로드가 필요합니다\n"
+            "• 설치 후 PC 재시작이 권장됩니다",
+            QMessageBox.Yes | QMessageBox.No
+        )
+        
+        if reply != QMessageBox.Yes:
+            return
+        
         self.set_status("FFmpeg 설치를 시작합니다...")
         self.ffmpeg_btn.setEnabled(False)
         self.progress.setValue(0)
+        
         def install_thread():
             try:
                 installer = FFmpegInstaller(
@@ -284,10 +331,28 @@ class YouTubeDownloaderWindow(QMainWindow):
                     self.set_status("FFmpeg 설치가 완료되었습니다!")
                     self.set_status("⚠️  중요: PATH 환경변수가 적용되도록 PC를 재시작한 후 다운로드를 시도하세요.")
                     print("[FFmpeg 설치 완료] PC를 재시작하여 PATH 환경변수를 적용하세요.")
+                    
+                    # 설치 완료 후 확인
+                    QMessageBox.information(
+                        self,
+                        "설치 완료",
+                        "FFmpeg 설치가 완료되었습니다!\n\n"
+                        "다운로드를 사용하려면:\n"
+                        "1. PC를 재시작하거나\n"
+                        "2. 프로그램을 재시작한 후 다시 시도해보세요."
+                    )
                 else:
                     self.set_status("FFmpeg 설치에 실패했습니다.")
+                    QMessageBox.warning(
+                        self,
+                        "설치 실패",
+                        "FFmpeg 설치에 실패했습니다.\n\n"
+                        "수동으로 FFmpeg를 설치하거나\n"
+                        "관리자 권한으로 다시 시도해보세요."
+                    )
             finally:
                 self.ffmpeg_btn.setEnabled(True)
+        
         threading.Thread(target=install_thread, daemon=True).start()
 
     def on_open_folder(self):

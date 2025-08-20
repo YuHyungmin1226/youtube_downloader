@@ -108,7 +108,12 @@ class FFmpegInstaller:
                 current_path = os.environ.get('PATH', '')
                 if str(bin_path) not in current_path:
                     new_path = f"{bin_path};{current_path}"
+                    # 영구 환경변수 설정
                     subprocess.run(['setx', 'PATH', new_path], check=True)
+                    # 현재 세션에도 즉시 적용
+                    os.environ['PATH'] = new_path
+                    if self.status_callback:
+                        self.status_callback(f"환경변수 PATH에 추가됨: {bin_path}")
             else:
                 # Unix 계열은 .bashrc 또는 .zshrc에 추가
                 shell_rc = Path.home() / ('.zshrc' if os.path.exists(Path.home() / '.zshrc') else '.bashrc')
@@ -117,6 +122,8 @@ class FFmpegInstaller:
                 if not shell_rc.exists() or export_line not in shell_rc.read_text():
                     with open(shell_rc, 'a') as f:
                         f.write(export_line)
+                    if self.status_callback:
+                        self.status_callback(f"환경변수 설정 완료: {shell_rc}")
             
             return True
         except Exception as e:

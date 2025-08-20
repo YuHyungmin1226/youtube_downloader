@@ -1,0 +1,12 @@
+# YouTube 다운로더 핵심 의존성
+yt-dlp>=2025.7.21
+PySide6>=6.0.0
+requests>=2.31.0
+
+# 추가 유틸리티 (선택사항)
+beautifulsoup4>=4.12.2
+colorama>=0.4.6
+filetype>=1.2.0
+
+# 개발 도구 (선택사항)
+python-dotenv>=1.0.0 
