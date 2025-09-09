@@ -31,9 +31,9 @@ class FFmpegInstaller:
                 return f"{base_url}/ffmpeg-master-latest-win32-gpl.zip"
         
         elif self.system == "Darwin":  # macOS
-            if "arm" in self.machine.lower():
-                return f"{base_url}/ffmpeg-master-latest-macos64-gpl.zip"
-            else:
+            if "arm64" in self.machine.lower():
+                return f"{base_url}/ffmpeg-master-latest-macos-arm64-gpl.zip"
+            else: # Intel
                 return f"{base_url}/ffmpeg-master-latest-macos64-gpl.zip"
         
         elif self.system == "Linux":
@@ -44,14 +44,14 @@ class FFmpegInstaller:
         
         else:
             raise ValueError(f"지원하지 않는 운영체제: {self.system}")
-    
+
     def get_install_path(self):
         """FFmpeg 설치 경로 반환"""
         if self.system == "Windows":
             return Path.home() / "ffmpeg"
         else:
             return Path.home() / ".local" / "ffmpeg"
-    
+
     def download_file(self, url, filepath):
         """파일 다운로드"""
         try:
@@ -75,7 +75,7 @@ class FFmpegInstaller:
             if self.status_callback:
                 self.status_callback(f"다운로드 오류: {e}")
             return False
-    
+
     def extract_archive(self, archive_path, extract_path):
         """압축 파일 해제"""
         try:
@@ -90,7 +90,7 @@ class FFmpegInstaller:
             if self.status_callback:
                 self.status_callback(f"압축 해제 오류: {e}")
             return False
-    
+
     def find_ffmpeg_binary(self, extract_path):
         """압축 해제된 폴더에서 ffmpeg 실행 파일 찾기"""
         for root, dirs, files in os.walk(extract_path):
@@ -98,38 +98,16 @@ class FFmpegInstaller:
                 if file == 'ffmpeg' or file == 'ffmpeg.exe':
                     return Path(root) / file
         return None
-    
+
     def add_to_path(self, ffmpeg_path):
-        """환경변수 PATH에 FFmpeg 경로 추가"""
-        try:
-            if self.system == "Windows":
-                # Windows 환경변수 설정
-                bin_path = ffmpeg_path.parent
-                current_path = os.environ.get('PATH', '')
-                if str(bin_path) not in current_path:
-                    new_path = f"{bin_path};{current_path}"
-                    # 영구 환경변수 설정
-                    subprocess.run(['setx', 'PATH', new_path], check=True)
-                    # 현재 세션에도 즉시 적용
-                    os.environ['PATH'] = new_path
-                    if self.status_callback:
-                        self.status_callback(f"환경변수 PATH에 추가됨: {bin_path}")
-            else:
-                # Unix 계열은 .bashrc 또는 .zshrc에 추가
-                shell_rc = Path.home() / ('.zshrc' if os.path.exists(Path.home() / '.zshrc') else '.bashrc')
-                export_line = f'\nexport PATH="{ffmpeg_path.parent}:$PATH"\n'
-                
-                if not shell_rc.exists() or export_line not in shell_rc.read_text():
-                    with open(shell_rc, 'a') as f:
-                        f.write(export_line)
-                    if self.status_callback:
-                        self.status_callback(f"환경변수 설정 완료: {shell_rc}")
-            
-            return True
-        except Exception as e:
-            if self.status_callback:
-                self.status_callback(f"환경변수 설정 오류: {e}")
-            return False
+        """환경변수 PATH에 FFmpeg 경로 추가 (안전한 방식으로 변경)"""
+        # 중요: 시스템의 PATH를 직접 수정하는 것은 위험하므로(특히 Windows의 setx),
+        # 이 함수는 더 이상 PATH를 수정하지 않습니다.
+        # 메인 애플리케이션은 설치된 경로에서 직접 ffmpeg를 찾아 사용합니다.
+        if self.status_callback:
+            self.status_callback("FFmpeg를 로컬 경로에 설치했습니다.")
+            self.status_callback("프로그램 재시작 후 자동으로 감지됩니다.")
+        return True
     
     def install_ffmpeg(self):
         """FFmpeg 설치 메인 함수"""
@@ -166,18 +144,17 @@ class FFmpegInstaller:
                     self.status_callback("FFmpeg 실행 파일을 찾을 수 없습니다.")
                 return False
             
-            # 7. 환경변수에 추가
-            if self.status_callback:
-                self.status_callback("환경변수 설정 중...")
+            # 7. 설치 확인 메시지 표시 (기존의 위험한 환경변수 설정 로직을 대체)
             if not self.add_to_path(ffmpeg_binary):
                 return False
             
             # 8. 임시 파일 정리
             try:
                 archive_path.unlink()
-            except:
-                pass
-            
+            except OSError as e:
+                if self.status_callback:
+                    self.status_callback(f"임시 파일 삭제 오류: {e}")
+
             self.ffmpeg_path = str(ffmpeg_binary)
             
             if self.status_callback:
