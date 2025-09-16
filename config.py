@@ -14,6 +14,7 @@ class Config:
             self.config_file = Path.home() / ".youtube_downloader_config.json"
         self.default_config = {
             "download_path": str(Path.home() / "Videos"),
+            "ffmpeg_path": "",
             "video_format": "mp4",
             "quality": "best",
             "window_size": [700, 400],

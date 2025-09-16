@@ -99,18 +99,8 @@ class FFmpegInstaller:
                     return Path(root) / file
         return None
 
-    def add_to_path(self, ffmpeg_path):
-        """환경변수 PATH에 FFmpeg 경로 추가 (안전한 방식으로 변경)"""
-        # 중요: 시스템의 PATH를 직접 수정하는 것은 위험하므로(특히 Windows의 setx),
-        # 이 함수는 더 이상 PATH를 수정하지 않습니다.
-        # 메인 애플리케이션은 설치된 경로에서 직접 ffmpeg를 찾아 사용합니다.
-        if self.status_callback:
-            self.status_callback("FFmpeg를 로컬 경로에 설치했습니다.")
-            self.status_callback("프로그램 재시작 후 자동으로 감지됩니다.")
-        return True
-    
     def install_ffmpeg(self):
-        """FFmpeg 설치 메인 함수"""
+        """FFmpeg 설치 메인 함수. 성공 시 ffmpeg 실행 파일 경로를, 실패 시 None을 반환합니다."""
         try:
             # 1. URL 가져오기
             if self.status_callback:
@@ -129,26 +119,22 @@ class FFmpegInstaller:
             if self.status_callback:
                 self.status_callback(f"FFmpeg 다운로드 중... ({archive_name})")
             if not self.download_file(url, archive_path):
-                return False
+                return None
             
             # 5. 압축 해제
             if self.status_callback:
                 self.status_callback("압축 파일 해제 중...")
             if not self.extract_archive(archive_path, install_path):
-                return False
+                return None
             
             # 6. ffmpeg 실행 파일 찾기
             ffmpeg_binary = self.find_ffmpeg_binary(install_path)
             if not ffmpeg_binary:
                 if self.status_callback:
                     self.status_callback("FFmpeg 실행 파일을 찾을 수 없습니다.")
-                return False
+                return None
             
-            # 7. 설치 확인 메시지 표시 (기존의 위험한 환경변수 설정 로직을 대체)
-            if not self.add_to_path(ffmpeg_binary):
-                return False
-            
-            # 8. 임시 파일 정리
+            # 7. 임시 파일 정리
             try:
                 archive_path.unlink()
             except OSError as e:
@@ -161,12 +147,12 @@ class FFmpegInstaller:
                 self.status_callback("FFmpeg 설치가 완료되었습니다!")
                 self.status_callback(f"설치 경로: {self.ffmpeg_path}")
             
-            return True
+            return self.ffmpeg_path
             
         except Exception as e:
             if self.status_callback:
                 self.status_callback(f"설치 중 오류 발생: {e}")
-            return False
+            return None
     
     def check_ffmpeg(self):
         """FFmpeg 설치 여부 확인"""
@@ -249,10 +235,10 @@ class FFmpegInstallerGUI:
                     status_callback=self.thread_safe_status,
                     progress_callback=self.thread_safe_progress
                 )
-                success = installer.install_ffmpeg()
+                ffmpeg_path = installer.install_ffmpeg()
                 
-                if success:
-                    self.root.after(0, lambda: messagebox.showinfo("성공", "FFmpeg 설치가 완료되었습니다!\n프로그램을 재시작하면 사용할 수 있습니다."))
+                if ffmpeg_path:
+                    self.root.after(0, lambda: messagebox.showinfo("성공", f"FFmpeg 설치가 완료되었습니다!\n설치 경로: {ffmpeg_path}"))
                 else:
                     self.root.after(0, lambda: messagebox.showerror("오류", "FFmpeg 설치에 실패했습니다."))
                 

@@ -33,8 +33,18 @@ class YouTubeDownloader:
         self.url = result
 
     def get_ffmpeg_path(self):
-        """FFmpeg 경로를 찾는 메서드 - check_ffmpeg_installed 함수 사용"""
-        return check_ffmpeg_installed(debug=False)  # 일반 검증 시에는 디버그 비활성화
+        """FFmpeg 경로를 찾는 메서드 - 설정 우선 확인 후 자동 탐지"""
+        # 1. 설정 파일에서 직접 경로 확인
+        ffmpeg_path = self.config.get("ffmpeg_path")
+        if ffmpeg_path and Path(ffmpeg_path).is_file():
+            return ffmpeg_path
+
+        # 2. 설정에 없으면 자동 탐지
+        ffmpeg_path = check_ffmpeg_installed(debug=False)
+        if ffmpeg_path:
+            # 3. 자동 탐지 성공 시 설정에 저장
+            self.config.set("ffmpeg_path", ffmpeg_path)
+        return ffmpeg_path
 
     def download_video(self):
         try:
@@ -297,6 +307,11 @@ class YouTubeDownloaderWindow(QMainWindow):
         self.signals.progress_signal.emit(percent)
 
     def on_install_ffmpeg(self):
+        ffmpeg_path = self.config.get("ffmpeg_path")
+        if ffmpeg_path and Path(ffmpeg_path).is_file():
+             QMessageBox.information(self, "안내", f"이미 FFmpeg가 설치되어 있습니다:\n{ffmpeg_path}")
+             return
+        
         ffmpeg_path = check_ffmpeg_installed(debug=True)  # 디버그 모드 활성화
         if ffmpeg_path:
             QMessageBox.information(self, "안내", f"이미 FFmpeg가 설치되어 있습니다:\n{ffmpeg_path}")
@@ -304,13 +319,12 @@ class YouTubeDownloaderWindow(QMainWindow):
         
         # 설치 전 확인
         reply = QMessageBox.question(
-            self, 
-            "FFmpeg 설치", 
-            "FFmpeg를 다운로드하고 설치하시겠습니까?\n\n"
-            "• 인터넷 연결이 필요합니다\n"
-            "• 약 50-100MB의 다운로드가 필요합니다\n"
-            "• 설치 후 PC 재시작이 권장됩니다",
-            QMessageBox.Yes | QMessageBox.No
+            self,
+            "FFmpeg 설치",
+            "FFmpeg를 다운로드하고 설치하시겠습니까?\n\n" 
+            "• 인터넷 연결이 필요합니다.\n" 
+            "• 약 50-100MB의 다운로드가 필요합니다.",
+            QMessageBox.Yes | QMessageBox.No,
         )
         
         if reply != QMessageBox.Yes:
@@ -326,28 +340,27 @@ class YouTubeDownloaderWindow(QMainWindow):
                     status_callback=self.thread_safe_status,
                     progress_callback=self.thread_safe_progress
                 )
-                success = installer.install_ffmpeg()
-                if success:
-                    self.set_status("FFmpeg 설치가 완료되었습니다!")
-                    self.set_status("⚠️  중요: PATH 환경변수가 적용되도록 PC를 재시작한 후 다운로드를 시도하세요.")
-                    print("[FFmpeg 설치 완료] PC를 재시작하여 PATH 환경변수를 적용하세요.")
+                ffmpeg_path = installer.install_ffmpeg() # 성공 시 경로 반환
+                if ffmpeg_path:
+                    self.set_status(f"FFmpeg 설치가 완료되었습니다: {ffmpeg_path}")
+                    # 설치된 경로를 설정에 저장
+                    self.config.set("ffmpeg_path", ffmpeg_path)
                     
-                    # 설치 완료 후 확인
+                    # 설치 완료 후 확인 메시지
+                    self.signals.status_signal.emit("FFmpeg가 설치되어 바로 사용할 수 있습니다.", False)
                     QMessageBox.information(
                         self,
                         "설치 완료",
-                        "FFmpeg 설치가 완료되었습니다!\n\n"
-                        "다운로드를 사용하려면:\n"
-                        "1. PC를 재시작하거나\n"
-                        "2. 프로그램을 재시작한 후 다시 시도해보세요."
+                        "FFmpeg 설치가 완료되었습니다!\n\n" 
+                        "이제 바로 다운로드를 시작할 수 있습니다."
                     )
                 else:
                     self.set_status("FFmpeg 설치에 실패했습니다.")
-                    QMessageBox.warning(
+                    QMessageBox. QMessageBox.warning(
                         self,
                         "설치 실패",
-                        "FFmpeg 설치에 실패했습니다.\n\n"
-                        "수동으로 FFmpeg를 설치하거나\n"
+                        "FFmpeg 설치에 실패했습니다.\n\n" 
+                        "수동으로 FFmpeg를 설치하거나\n" 
                         "관리자 권한으로 다시 시도해보세요."
                     )
             finally:
