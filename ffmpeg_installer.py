@@ -7,10 +7,7 @@ import requests
 import subprocess
 import shutil
 from pathlib import Path
-import tkinter as tk
-from tkinter import messagebox, ttk
-import threading
-from utils import check_ffmpeg_installed, get_system_info
+from utils import check_ffmpeg_installed
 
 class FFmpegInstaller:
     def __init__(self, status_callback=None, progress_callback=None):
@@ -156,108 +153,4 @@ class FFmpegInstaller:
     
     def check_ffmpeg(self):
         """FFmpeg 설치 여부 확인"""
-        return check_ffmpeg_installed()
-
-class FFmpegInstallerGUI:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("FFmpeg 자동 설치 도구")
-        self.root.geometry("500x300")
-        self.root.resizable(False, False)
-        self.create_widgets()
-    
-    def create_widgets(self):
-        # 제목
-        title_label = tk.Label(self.root, text="FFmpeg 자동 설치 도구", font=('Arial', 16, 'bold'))
-        title_label.pack(pady=20)
-        
-        # 시스템 정보
-        sys_info = get_system_info()
-        system_info = f"운영체제: {sys_info['os']} {sys_info['os_version']}"
-        arch_info = f"아키텍처: {sys_info['architecture']}"
-        
-        tk.Label(self.root, text=system_info).pack()
-        tk.Label(self.root, text=arch_info).pack(pady=(0, 20))
-        
-        # 진행바
-        self.progress = ttk.Progressbar(self.root, orient=tk.HORIZONTAL, length=400, mode='determinate')
-        self.progress.pack(pady=10)
-        
-        # 상태 텍스트
-        self.status_text = tk.Text(self.root, height=8, width=60, wrap=tk.WORD)
-        self.status_text.pack(pady=10, padx=20)
-        self.status_text.insert(tk.END, "FFmpeg 설치 상태를 확인하는 중...\n")
-        
-        # 버튼들
-        button_frame = tk.Frame(self.root)
-        button_frame.pack(pady=10)
-        
-        self.check_btn = tk.Button(button_frame, text="FFmpeg 확인", command=self.check_ffmpeg)
-        self.check_btn.pack(side=tk.LEFT, padx=5)
-        
-        self.install_btn = tk.Button(button_frame, text="FFmpeg 설치", command=self.install_ffmpeg)
-        self.install_btn.pack(side=tk.LEFT, padx=5)
-        
-        self.close_btn = tk.Button(button_frame, text="닫기", command=self.root.destroy)
-        self.close_btn.pack(side=tk.LEFT, padx=5)
-        
-        # 초기 상태 확인
-        self.check_ffmpeg()
-    
-    def set_status(self, message):
-        self.status_text.insert(tk.END, message + '\n')
-        self.status_text.see(tk.END)
-        self.root.update()
-    
-    def set_progress(self, value):
-        self.progress['value'] = value
-        self.root.update_idletasks()
-    
-    def check_ffmpeg(self):
-        installer = FFmpegInstaller()
-        ffmpeg_path = installer.check_ffmpeg()
-        
-        if ffmpeg_path:
-            self.set_status(f"✓ FFmpeg가 이미 설치되어 있습니다: {ffmpeg_path}")
-            self.install_btn.config(state=tk.DISABLED)
-        else:
-            self.set_status("✗ FFmpeg가 설치되어 있지 않습니다.")
-            self.install_btn.config(state=tk.NORMAL)
-    
-    def install_ffmpeg(self):
-        self.install_btn.config(state=tk.DISABLED)
-        self.check_btn.config(state=tk.DISABLED)
-        self.progress['value'] = 0
-        
-        def install_thread():
-            try:
-                installer = FFmpegInstaller(
-                    status_callback=self.thread_safe_status,
-                    progress_callback=self.thread_safe_progress
-                )
-                ffmpeg_path = installer.install_ffmpeg()
-                
-                if ffmpeg_path:
-                    self.root.after(0, lambda: messagebox.showinfo("성공", f"FFmpeg 설치가 완료되었습니다!\n설치 경로: {ffmpeg_path}"))
-                else:
-                    self.root.after(0, lambda: messagebox.showerror("오류", "FFmpeg 설치에 실패했습니다."))
-                
-            finally:
-                self.root.after(0, lambda: self.install_btn.config(state=tk.NORMAL))
-                self.root.after(0, lambda: self.check_btn.config(state=tk.NORMAL))
-        
-        threading.Thread(target=install_thread, daemon=True).start()
-    
-    def thread_safe_status(self, message):
-        self.root.after(0, self.set_status, message)
-    
-    def thread_safe_progress(self, value):
-        self.root.after(0, self.set_progress, value)
-
-def main():
-    root = tk.Tk()
-    app = FFmpegInstallerGUI(root)
-    root.mainloop()
-
-if __name__ == "__main__":
-    main() 
+        return check_ffmpeg_installed() 

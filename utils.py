@@ -181,14 +181,4 @@ def check_video_availability(url):
                 return False, "영상을 찾을 수 없습니다."
     except Exception as e:
         # 네트워크 오류 등으로 확인할 수 없는 경우
-        return None, f"영상 존재 여부를 확인할 수 없습니다: {e}"
-
-def get_system_info():
-    """시스템 정보 반환"""
-    return {
-        "os": platform.system(),
-        "os_version": platform.release(),
-        "architecture": platform.machine(),
-        "python_version": platform.python_version(),
-        "home_directory": str(Path.home())
-    } 
+        return None, f"영상 존재 여부를 확인할 수 없습니다: {e}" 
