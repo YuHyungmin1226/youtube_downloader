@@ -9,4 +9,7 @@ colorama>=0.4.6
 filetype>=1.2.0
 
 # 개발 도구 (선택사항)
-python-dotenv>=1.0.0 
+python-dotenv>=1.0.0
+
+# 빌드 도구
+pyinstaller>=5.0.0

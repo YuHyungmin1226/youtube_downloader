@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 
 import yt_dlp as youtube_dl
-from PySide6.QtCore import QObject, pyqtSignal
+from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import (
     QApplication, QDialog, QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMessageBox, QProgressBar, QPushButton, QTextEdit, QVBoxLayout, QWidget
 )
@@ -152,8 +152,8 @@ class YouTubeDownloader:
 
 class SignalProxy(QObject):
     """GUI 업데이트를 위한 시그널 프록시"""
-    status_signal = pyqtSignal(str, bool)
-    progress_signal = pyqtSignal(float)
+    status_signal = Signal(str, bool)
+    progress_signal = Signal(float)
 
 
 class YouTubeDownloaderWindow(QMainWindow):
