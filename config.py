@@ -126,8 +126,7 @@ class Config:
         if self.is_audio_only():
             format_str = "bestaudio[ext=m4a]/best[ext=m4a]/best"
         else:
-            format_str = f'bestvideo[ext={self.get_video_format()}]+'
-            format_str += f'bestaudio[ext=m4a]/{self.get_video_format()}'
+            format_str = "bestvideo+bestaudio"
 
         opts = {
             'format': format_str,
