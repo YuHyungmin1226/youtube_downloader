@@ -26,7 +26,7 @@ def build_executable():
 
     # PyInstaller 명령어 구성
     cmd = [
-        'pyinstaller',
+        os.path.join(os.path.dirname(sys.executable), 'pyinstaller.exe'),
         '--onefile',                    # 단일 실행 파일로 생성
         '--windowed',                   # 콘솔 창 숨김
         '--name=YouTube_Downloader',    # 실행 파일 이름
