@@ -18,7 +18,7 @@ def clean_build_dirs():
     for dir_name in dirs_to_clean:
         if os.path.exists(dir_name):
             print(f"{dir_name} 디렉토리 정리 중...")
-            shutil.rmtree(dir_name)
+            shutil.rmtree(dir_name, ignore_errors=True)
 
 def build_executable():
     """PyInstaller를 사용하여 실행 파일을 빌드합니다."""
@@ -26,7 +26,7 @@ def build_executable():
 
     # PyInstaller 명령어 구성
     cmd = [
-        os.path.join(os.path.dirname(sys.executable), 'pyinstaller.exe'),
+        sys.executable, '-m', 'PyInstaller',
         '--onefile',                    # 단일 실행 파일로 생성
         '--windowed',                   # 콘솔 창 숨김
         '--name=YouTube_Downloader',    # 실행 파일 이름
