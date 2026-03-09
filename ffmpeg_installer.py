@@ -49,27 +49,37 @@ class FFmpegInstaller:
 
     def download_file(self, url, filepath):
         """파일 다운로드"""
-        try:
-            response = requests.get(url, stream=True, timeout=10)
-            response.raise_for_status()
+        import time
+        max_retries = 3
+        
+        for attempt in range(max_retries):
+            try:
+                # 10초 타임아웃은 너무 짧을 수 있으므로 30초로 증가
+                response = requests.get(url, stream=True, timeout=30)
+                response.raise_for_status()
 
-            total_size = int(response.headers.get('content-length', 0))
-            downloaded = 0
+                total_size = int(response.headers.get('content-length', 0))
+                downloaded = 0
 
-            with open(filepath, 'wb') as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    if chunk:
-                        f.write(chunk)
-                        downloaded += len(chunk)
-                        if total_size > 0 and self.progress_callback:
-                            progress = (downloaded / total_size) * 100
-                            self.progress_callback(progress)
+                with open(filepath, 'wb') as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        if chunk:
+                            f.write(chunk)
+                            downloaded += len(chunk)
+                            if total_size > 0 and self.progress_callback:
+                                progress = (downloaded / total_size) * 100
+                                self.progress_callback(progress)
 
-            return True
-        except (requests.exceptions.RequestException, IOError) as e:
-            if self.status_callback:
-                self.status_callback(f"다운로드 오류: {e}")
-            return False
+                return True
+            except (requests.exceptions.RequestException, IOError) as e:
+                if attempt < max_retries - 1:
+                    if self.status_callback:
+                        self.status_callback(f"다운로드 지연/오류 발생 (재시도 {attempt+1}/{max_retries})...")
+                    time.sleep(2)
+                else:
+                    if self.status_callback:
+                        self.status_callback(f"다운로드 오류: {e}")
+                    return False
 
     def extract_archive(self, archive_path, extract_path):
         """압축 파일 해제"""
