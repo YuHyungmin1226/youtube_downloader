@@ -35,7 +35,7 @@ def check_ffmpeg_installed(debug=False):
     if not ffmpeg_path and platform.system() == "Windows":
         possible_paths = [
             Path.home() / "ffmpeg" / "bin" / "ffmpeg.exe",
-            "C:/ffmpeg/bin/ffmpeg.exe",
+            Path("C:/ffmpeg/bin/ffmpeg.exe"),
         ]
         for path in possible_paths:
             if path.exists():

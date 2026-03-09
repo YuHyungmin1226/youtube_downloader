@@ -23,7 +23,7 @@ class YouTubeDownloader:
     def __init__(self, url, status_callback=None, progress_callback=None):
         self.url = url
         self.config = Config()
-        self.last_percent = 0
+        self.last_percent = 0.0
         self.status_callback = status_callback
         self.progress_callback = progress_callback
         self.max_retries = self.config.get_max_retries()
@@ -154,6 +154,10 @@ class SignalProxy(QObject):
     """GUI 업데이트를 위한 시그널 프록시"""
     status_signal = Signal(str, bool)
     progress_signal = Signal(float)
+    download_btn_state = Signal(bool)
+    ffmpeg_btn_state = Signal(bool)
+    show_message = Signal(str, str, str)
+    open_folder = Signal()
 
 
 class YouTubeDownloaderWindow(QMainWindow):
@@ -198,6 +202,10 @@ class YouTubeDownloaderWindow(QMainWindow):
         self.signals = SignalProxy()
         self.signals.status_signal.connect(self.set_status)
         self.signals.progress_signal.connect(self.set_progress)
+        self.signals.download_btn_state.connect(self.download_btn.setEnabled)
+        self.signals.ffmpeg_btn_state.connect(self.ffmpeg_btn.setEnabled)
+        self.signals.show_message.connect(self.show_message_dialog)
+        self.signals.open_folder.connect(self.on_open_folder)
 
         paste_btn.clicked.connect(self.on_paste_link)
         self.download_btn.clicked.connect(self.on_download)
@@ -229,6 +237,13 @@ class YouTubeDownloaderWindow(QMainWindow):
         except RuntimeError as e:
             print(f"진행률 업데이트 실패: {e}")
 
+    def show_message_dialog(self, msg_type, title, msg):
+        """스레드 안전한 메시지 박스"""
+        if msg_type == "info":
+            QMessageBox.information(self, title, msg)
+        elif msg_type == "warning":
+            QMessageBox.warning(self, title, msg)
+
     def on_paste_link(self):
         """클립보드에서 링크 붙여넣기"""
         clipboard = QApplication.clipboard()
@@ -257,11 +272,11 @@ class YouTubeDownloaderWindow(QMainWindow):
             if success:
                 self.signals.status_signal.emit("다운로드가 완료되었습니다.", False)
                 if self.config.should_auto_open_folder():
-                    self.on_open_folder()
+                    self.signals.open_folder.emit()
             else:
                 self.signals.status_signal.emit("다운로드에 실패했습니다.", False)
         finally:
-            self.download_btn.setEnabled(True)
+            self.signals.download_btn_state.emit(True)
 
     def thread_safe_status(self, msg, replace=False):
         """스레드 안전한 상태 시그널 발생"""
@@ -301,12 +316,12 @@ class YouTubeDownloaderWindow(QMainWindow):
                 if new_ffmpeg_path:
                     self.config.set("ffmpeg_path", new_ffmpeg_path)
                     self.signals.status_signal.emit(f"FFmpeg 설치 완료: {new_ffmpeg_path}", False)
-                    QMessageBox.information(self, "설치 완료", "FFmpeg 설치가 완료되었습니다.")
+                    self.signals.show_message.emit("info", "설치 완료", "FFmpeg 설치가 완료되었습니다.")
                 else:
                     self.signals.status_signal.emit("FFmpeg 설치에 실패했습니다.", False)
-                    QMessageBox.warning(self, "설치 실패", "FFmpeg 설치에 실패했습니다. 수동으로 설치해주세요.")
+                    self.signals.show_message.emit("warning", "설치 실패", "FFmpeg 설치에 실패했습니다. 수동으로 설치해주세요.")
             finally:
-                self.ffmpeg_btn.setEnabled(True)
+                self.signals.ffmpeg_btn_state.emit(True)
 
         threading.Thread(target=install_thread, daemon=True).start()
 
