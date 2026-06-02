@@ -4,6 +4,7 @@ YouTube 다운로더 설정 파일
 import json
 from pathlib import Path
 import platform
+import re
 
 class Config:
     """설정 관리 클래스"""
@@ -27,7 +28,13 @@ class Config:
             "download_audio_only": False,
             "preferred_quality": "1080p",
             "use_cookies": False,
+            "cookies_source": "file",
             "cookies_file": "",
+            "cookies_browser": "chrome",
+            "use_po_token": False,
+            "po_token": "",
+            "visitor_data": "",
+            "player_client": "web",
             "subtitle_download": False,
             "subtitle_language": "ko",
             "playlist_download": False,
@@ -123,10 +130,25 @@ class Config:
 
     def get_ydl_opts(self):
         """yt-dlp 옵션 딕셔너리 반환"""
+        quality_val = self.get_quality()
+        preferred = self.get_preferred_quality()
+
         if self.is_audio_only():
-            format_str = "bestaudio[ext=m4a]/best[ext=m4a]/best"
+            if quality_val == "worst":
+                format_str = "worstaudio/worst"
+            else:
+                format_str = "bestaudio[ext=m4a]/best[ext=m4a]/best"
         else:
-            format_str = "bestvideo+bestaudio"
+            if quality_val == "worst":
+                format_str = "worstvideo+worstaudio/worst"
+            else:
+                # 해상도 제한 파싱 (예: "1080p" -> 1080)
+                height_match = re.search(r'\d+', str(preferred))
+                if height_match:
+                    h = height_match.group()
+                    format_str = f"bestvideo[height<={h}]+bestaudio/best[height<={h}]/best"
+                else:
+                    format_str = "bestvideo+bestaudio/best"
 
         opts = {
             'format': format_str,
@@ -145,9 +167,25 @@ class Config:
             opts['writeautomaticsub'] = True
             opts['subtitleslangs'] = [self.get("subtitle_language", "ko")]
 
-        # 쿠키 파일 설정
-        if self.get("use_cookies", False) and self.get("cookies_file"):
-            opts['cookiefile'] = self.get("cookies_file")
+        # 쿠키 설정 (파일 또는 브라우저)
+        if self.get("use_cookies", False):
+            if self.get("cookies_source", "file") == "file" and self.get("cookies_file"):
+                opts['cookiefile'] = self.get("cookies_file")
+            elif self.get("cookies_source", "file") == "browser" and self.get("cookies_browser"):
+                opts['cookiesfrombrowser'] = (self.get("cookies_browser"),)
+
+        # PO Token 및 Extractor Args 설정
+        youtube_args = {}
+        if self.get("use_po_token", False):
+            if self.get("po_token"):
+                youtube_args['po_token'] = [self.get("po_token")]
+            if self.get("visitor_data"):
+                youtube_args['visitor_data'] = [self.get("visitor_data")]
+            if self.get("player_client"):
+                youtube_args['player_client'] = [self.get("player_client")]
+
+        if youtube_args:
+            opts['extractor_args'] = {'youtube': youtube_args}
 
         # 재생목록 제한
         if self.get("playlist_download", False):

@@ -31,12 +31,21 @@ def check_ffmpeg_installed(debug=False):
             ffmpeg_path = "/usr/local/bin/ffmpeg"
             debug_log("Found in /usr/local/bin/ffmpeg")
 
-    # 3. Windows 일반 경로
+    # 3. Windows 일반 경로 및 홈 디렉토리 내 ffmpeg 폴더 탐색
     if not ffmpeg_path and platform.system() == "Windows":
         possible_paths = [
-            Path.home() / "ffmpeg" / "bin" / "ffmpeg.exe",
             Path("C:/ffmpeg/bin/ffmpeg.exe"),
         ]
+        # 홈 디렉토리의 ffmpeg 폴더가 존재하면 재귀적으로 ffmpeg.exe 탐색
+        ffmpeg_dir = Path.home() / "ffmpeg"
+        if ffmpeg_dir.exists():
+            for binary_path in ffmpeg_dir.glob("**/ffmpeg.exe"):
+                if binary_path.is_file():
+                    possible_paths.insert(0, binary_path)
+                    break
+        else:
+            possible_paths.insert(0, Path.home() / "ffmpeg" / "bin" / "ffmpeg.exe")
+
         for path in possible_paths:
             if path.exists():
                 ffmpeg_path = str(path)
