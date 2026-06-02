@@ -97,7 +97,9 @@ class YouTubeDownloader:
                 if "video unavailable" in error_msg:
                     user_message += "영상을 찾을 수 없거나 비공개 상태입니다."
                 elif "sign in" in error_msg or "age restricted" in error_msg:
-                    user_message += "연령 제한 영상입니다. 설정에서 쿠키 파일을 사용해 보세요."
+                    user_message += "연령 제한 영상입니다. 설정에서 쿠키 연동 또는 쿠키 파일을 사용해 보세요."
+                elif "cookie" in error_msg:
+                    user_message += "쿠키 설정에 오류가 있습니다. 설정의 '보안 및 쿠키' 탭에서 브라우저 연동 선택 또는 쿠키 파일 경로가 올바른지 확인해주세요."
                 elif "copyright" in error_msg:
                     user_message += "저작권 문제로 다운로드할 수 없습니다."
                 elif "private video" in error_msg:
