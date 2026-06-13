@@ -114,17 +114,16 @@ def format_file_size(size_bytes):
 
     return f"{size_bytes:.1f}{size_names[i]}"
 
-def validate_youtube_url(url):
-    """YouTube URL 유효성 검증"""
-    if not url or not url.strip():
-        return False, "URL이 입력되지 않았습니다."
+def supported_domains():
+    """지원하는 사이트 목록 반환"""
+    return [
+        {"name": "YouTube", "domain": r'(youtube\.com|youtu\.be)', "normalize": True},
+        {"name": "Pornhub", "domain": r'pornhub\.com', "normalize": False},
+    ]
 
-    url = url.strip()
 
-    # 기본 URL 패턴 검증
-    if not re.match(r'^(https?://)?(www\.)?(youtube\.com|youtu\.be)/', url):
-        return False, "유효하지 않은 YouTube URL입니다."
-
+def normalize_youtube_url(url):
+    """YouTube URL을 표준 형식으로 정규화"""
     video_id = None
     patterns = [
         r'(?:v=|/)([0-9A-Za-z_-]{11}).*',
@@ -132,20 +131,37 @@ def validate_youtube_url(url):
         r'embed/([0-9A-Za-z_-]{11})',
         r'v/([0-9A-Za-z_-]{11})'
     ]
-
     for pattern in patterns:
         match = re.search(pattern, url)
         if match:
             video_id = match.group(1)
             break
-
     if not video_id or len(video_id) != 11:
-        return False, "유효하지 않은 YouTube 영상 ID입니다."
+        return None
+    return f"https://www.youtube.com/watch?v={video_id}"
 
-    # 정규화된 URL 반환
-    normalized_url = f"https://www.youtube.com/watch?v={video_id}"
 
-    return True, normalized_url
+def validate_url(url):
+    """지원하는 사이트(YouTube, Pornhub 등)의 URL 유효성 검증"""
+    if not url or not url.strip():
+        return False, "URL이 입력되지 않았습니다."
+
+    url = url.strip()
+
+    if not re.match(r'^https?://', url):
+        url = 'https://' + url
+
+    for site in supported_domains():
+        if re.match(r'^(https?://)?(www\.)?' + site["domain"] + r'/', url):
+            if site["normalize"]:
+                normalized = normalize_youtube_url(url)
+                if normalized:
+                    return True, normalized
+                return False, "유효하지 않은 영상 ID입니다."
+            return True, url
+
+    domains = ", ".join(s["name"] for s in supported_domains())
+    return False, f"지원하지 않는 URL입니다. (현재 지원: {domains})"
 
 def check_video_availability(url):
     """YouTube 영상의 실제 존재 여부 확인 (선택적 기능)"""

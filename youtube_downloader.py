@@ -14,11 +14,11 @@ from PySide6.QtWidgets import (
 from config import Config
 from ffmpeg_installer import FFmpegInstaller
 from settings_dialog import SettingsDialog
-from utils import check_ffmpeg_installed, open_folder, validate_youtube_url
+from utils import check_ffmpeg_installed, open_folder, validate_url
 
 
 class YouTubeDownloader:
-    """YouTube 다운로더 로직 클래스"""
+    """비디오 다운로더 로직 클래스 (YouTube, Pornhub 등 yt-dlp 지원 사이트)"""
 
     def __init__(self, url, status_callback=None, progress_callback=None):
         self.url = url
@@ -28,12 +28,14 @@ class YouTubeDownloader:
         self.progress_callback = progress_callback
         self.max_retries = self.config.get_max_retries()
         self.retry_delay = self.config.get_retry_delay()
+        self.is_youtube = False
 
     def validate_url(self):
         """URL 유효성 검증"""
-        is_valid, result = validate_youtube_url(self.url)
+        is_valid, result = validate_url(self.url)
         if not is_valid:
             raise ValueError(result)
+        self.is_youtube = 'youtube.com' in result or 'youtu.be' in result
         self.url = result
 
     def get_ffmpeg_path(self):
@@ -70,7 +72,7 @@ class YouTubeDownloader:
                 self.status_callback(f"다운로드 경로 생성에 실패했습니다: {e}")
             return False
 
-        ydl_opts = self.config.get_ydl_opts()
+        ydl_opts = self.config.get_ydl_opts(is_youtube=self.is_youtube)
         ydl_opts.update({
             'progress_hooks': [self.my_hook],
             'ffmpeg_location': ffmpeg_path,
@@ -94,18 +96,20 @@ class YouTubeDownloader:
                 error_msg = str(e).lower()
                 user_message = f"\n다운로드 오류 (시도 {attempt + 1}/{self.max_retries}): "
 
-                if "video unavailable" in error_msg:
-                    user_message += "영상을 찾을 수 없거나 비공개 상태입니다."
-                elif "sign in" in error_msg or "age restricted" in error_msg:
-                    user_message += "연령 제한 영상입니다. 설정에서 쿠키 연동 또는 쿠키 파일을 사용해 보세요."
+                if "video unavailable" in error_msg or "not available" in error_msg:
+                    user_message += "영상을 찾을 수 없거나 비공개/삭제된 상태입니다."
+                elif "sign in" in error_msg or "age restricted" in error_msg or "age-gate" in error_msg:
+                    user_message += "연령 제한 콘텐츠입니다. 설정에서 쿠키 연동 또는 쿠키 파일을 사용해 보세요."
                 elif "cookie" in error_msg:
-                    user_message += "쿠키 설정에 오류가 있습니다. 설정의 '보안 및 쿠키' 탭에서 브라우저 연동 선택 또는 쿠키 파일 경로가 올바른지 확인해주세요."
+                    user_message += "쿠키 설정에 오류가 있습니다. 설정의 '보안 및 쿠키' 탭에서 브라우저 연동 또는 쿠키 파일 경로가 올바른지 확인해주세요."
                 elif "copyright" in error_msg:
                     user_message += "저작권 문제로 다운로드할 수 없습니다."
-                elif "private video" in error_msg:
+                elif "private" in error_msg:
                     user_message += "비공개 영상입니다. 접근 권한이 필요합니다."
-                elif "geo-restricted" in error_msg:
+                elif "geo-restricted" in error_msg or "geo restricted" in error_msg:
                     user_message += "지역 제한으로 인해 다운로드할 수 없습니다."
+                elif "http error 403" in error_msg or "http error 401" in error_msg:
+                    user_message += "접근 권한이 없습니다. 설정에서 쿠키를 설정해보세요."
                 else:
                     user_message += "알 수 없는 다운로드 오류가 발생했습니다."
 
@@ -167,22 +171,22 @@ class YouTubeDownloaderWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("YouTube 영상 다운로드 도구 (PySide6)")
+        self.setWindowTitle("비디오 다운로드 도구 (PySide6)")
         self.setFixedSize(700, 400)
         self.config = Config()
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
         self.layout = QVBoxLayout(self.central_widget)
 
-        self.url_label = QLabel("YouTube 링크 입력:")
+        self.url_label = QLabel("비디오 링크 입력:")
         self.url_edit = QLineEdit()
-        self.url_edit.setPlaceholderText("https://www.youtube.com/watch?v=...")
+        self.url_edit.setPlaceholderText("https://www.youtube.com/watch?v=... 또는 Pornhub 링크")
         self.layout.addWidget(self.url_label)
         self.layout.addWidget(self.url_edit)
 
         btn_layout = QHBoxLayout()
         paste_btn = QPushButton("링크 붙여넣기")
-        self.download_btn = QPushButton("영상 다운로드")
+        self.download_btn = QPushButton("다운로드")
         self.ffmpeg_btn = QPushButton("FFmpeg 설치")
         open_folder_btn = QPushButton("저장 폴더 열기")
         settings_btn = QPushButton("설정")
@@ -215,7 +219,7 @@ class YouTubeDownloaderWindow(QMainWindow):
         open_folder_btn.clicked.connect(self.on_open_folder)
         settings_btn.clicked.connect(self.on_open_settings)
 
-        self.set_status("YouTube 링크를 입력하고 다운로드 버튼을 누르세요.")
+        self.set_status("YouTube 또는 Pornhub 링크를 입력하고 다운로드 버튼을 누르세요.")
 
     def set_status(self, msg, replace=False):
         """스레드 안전한 상태 메시지 업데이트"""
@@ -255,7 +259,7 @@ class YouTubeDownloaderWindow(QMainWindow):
         """다운로드 시작"""
         url = self.url_edit.text().strip()
         if not url:
-            QMessageBox.warning(self, "입력 오류", "YouTube 링크를 입력하세요.")
+            QMessageBox.warning(self, "입력 오류", "비디오 링크를 입력하세요.")
             return
         self.set_status("다운로드를 시작합니다...")
         self.download_btn.setEnabled(False)

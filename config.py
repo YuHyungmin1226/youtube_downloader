@@ -128,8 +128,9 @@ class Config:
         """다운로드 후 폴더 자동 열기 여부"""
         return self.get("auto_open_folder", False)
 
-    def get_ydl_opts(self):
-        """yt-dlp 옵션 딕셔너리 반환"""
+    def get_ydl_opts(self, is_youtube=False):
+        """yt-dlp 옵션 딕셔너리 반환
+        is_youtube: True면 YouTube 전용 extractor_args(po_token 등)를 포함"""
         quality_val = self.get_quality()
         preferred = self.get_preferred_quality()
 
@@ -174,18 +175,17 @@ class Config:
             elif self.get("cookies_source", "file") == "browser" and self.get("cookies_browser"):
                 opts['cookiesfrombrowser'] = (self.get("cookies_browser"),)
 
-        # PO Token 및 Extractor Args 설정
-        youtube_args = {}
-        if self.get("use_po_token", False):
+        # PO Token 및 Extractor Args 설정 (YouTube 전용)
+        if is_youtube and self.get("use_po_token", False):
+            youtube_args = {}
             if self.get("po_token"):
                 youtube_args['po_token'] = [self.get("po_token")]
             if self.get("visitor_data"):
                 youtube_args['visitor_data'] = [self.get("visitor_data")]
             if self.get("player_client"):
                 youtube_args['player_client'] = [self.get("player_client")]
-
-        if youtube_args:
-            opts['extractor_args'] = {'youtube': youtube_args}
+            if youtube_args:
+                opts['extractor_args'] = {'youtube': youtube_args}
 
         # 재생목록 제한
         if self.get("playlist_download", False):
