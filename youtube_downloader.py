@@ -180,7 +180,7 @@ class YouTubeDownloaderWindow(QMainWindow):
 
         self.url_label = QLabel("비디오 링크 입력:")
         self.url_edit = QLineEdit()
-        self.url_edit.setPlaceholderText("https://www.youtube.com/watch?v=... 또는 Pornhub 링크")
+        self.url_edit.setPlaceholderText("Input URL...")
         self.layout.addWidget(self.url_label)
         self.layout.addWidget(self.url_edit)
 
