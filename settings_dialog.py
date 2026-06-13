@@ -2,7 +2,7 @@
 설정 다이얼로그 모듈
 """
 from PySide6.QtWidgets import (
-    QDialog, QFormLayout, QLineEdit, QPushButton, QHBoxLayout, QVBoxLayout, QComboBox, QCheckBox, QSpinBox, QFileDialog, QTabWidget, QWidget, QGroupBox
+    QDialog, QFormLayout, QLineEdit, QPushButton, QHBoxLayout, QVBoxLayout, QComboBox, QCheckBox, QSpinBox, QFileDialog, QTabWidget, QWidget, QGroupBox, QLabel
 )
 
 class SettingsDialog(QDialog):
@@ -11,7 +11,7 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.config = config
         self.setWindowTitle("설정")
-        self.setFixedSize(480, 500)
+        self.setFixedSize(520, 560)
         self.setup_ui()
 
     def setup_ui(self):
@@ -72,7 +72,33 @@ class SettingsDialog(QDialog):
         self.delay_spin.setRange(1, 30)
         self.delay_spin.setValue(self.config.get_retry_delay())
         form_general.addRow("재시도 지연 시간(초):", self.delay_spin)
-        
+
+        # ------------------ 프록시 설정 ------------------
+        proxy_group = QGroupBox("프록시 설정 (차단된 사이트 우회)")
+        form_proxy = QFormLayout(proxy_group)
+
+        self.proxy_mode_combo = QComboBox()
+        self.proxy_mode_combo.addItems(["자동 감지", "수동 설정", "사용 안함"])
+        mode_map = {"auto": "자동 감지", "manual": "수동 설정", "none": "사용 안함"}
+        self.proxy_mode_combo.setCurrentText(mode_map.get(self.config.get("proxy_mode", "auto"), "자동 감지"))
+        form_proxy.addRow("프록시 모드:", self.proxy_mode_combo)
+
+        self.proxy_url_edit = QLineEdit(self.config.get("proxy_url", ""))
+        self.proxy_url_edit.setPlaceholderText("http://127.0.0.1:1080")
+        form_proxy.addRow("프록시 주소:", self.proxy_url_edit)
+
+        # 감지된 프록시 표시
+        detected = self.config._detect_system_proxy()
+        if detected:
+            self.detected_label = QLabel(f"감지됨: {self.config.mask_proxy_url(detected)}")
+            self.detected_label.setStyleSheet("color: #4a9eff; font-size: 11px;")
+        else:
+            self.detected_label = QLabel("감지된 시스템 프록시 없음")
+            self.detected_label.setStyleSheet("color: #888; font-size: 11px;")
+        form_proxy.addRow("", self.detected_label)
+
+        form_general.addRow(proxy_group)
+
         self.tab_widget.addTab(tab_general, "기본 설정")
 
         # ------------------ 탭 2: 자막/재생목록 ------------------
@@ -181,12 +207,14 @@ class SettingsDialog(QDialog):
         self.cookies_check.toggled.connect(self.on_cookies_toggled)
         self.cookies_source_combo.currentIndexChanged.connect(self.on_cookies_source_changed)
         self.po_token_check.toggled.connect(self.on_po_token_toggled)
+        self.proxy_mode_combo.currentIndexChanged.connect(self.on_proxy_mode_changed)
 
         # 초기 상태에 맞게 위젯 활성화/비활성화 설정
         self.subtitle_lang_edit.setEnabled(self.subtitle_check.isChecked())
         self.playlist_max_spin.setEnabled(self.playlist_check.isChecked())
         self.on_cookies_toggled(self.cookies_check.isChecked())
         self.on_po_token_toggled(self.po_token_check.isChecked())
+        self.on_proxy_mode_changed()
 
     def on_cookies_toggled(self, checked):
         """쿠키 사용 체크박스 상태 변경 처리"""
@@ -212,6 +240,9 @@ class SettingsDialog(QDialog):
         self.po_token_edit.setEnabled(checked)
         self.visitor_data_edit.setEnabled(checked)
         self.player_client_combo.setEnabled(checked)
+
+    def on_proxy_mode_changed(self):
+        self.proxy_url_edit.setEnabled(self.proxy_mode_combo.currentText() == "수동 설정")
 
     def browse_path(self):
         """다운로드 경로 선택"""
@@ -249,7 +280,9 @@ class SettingsDialog(QDialog):
             "player_client": self.player_client_combo.currentText(),
             "auto_open_folder": self.auto_open_check.isChecked(),
             "max_retries": self.retry_spin.value(),
-            "retry_delay": self.delay_spin.value()
+            "retry_delay": self.delay_spin.value(),
+            "proxy_mode": {"자동 감지": "auto", "수동 설정": "manual", "사용 안함": "none"}.get(self.proxy_mode_combo.currentText(), "auto"),
+            "proxy_url": self.proxy_url_edit.text().strip()
         })
         self.config.save_config()
         self.accept()

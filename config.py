@@ -2,9 +2,11 @@
 YouTube 다운로더 설정 파일
 """
 import json
+import os
 from pathlib import Path
 import platform
 import re
+from urllib.parse import urlsplit, urlunsplit
 
 class Config:
     """설정 관리 클래스"""
@@ -38,7 +40,9 @@ class Config:
             "subtitle_download": False,
             "subtitle_language": "ko",
             "playlist_download": False,
-            "max_playlist_items": 10
+            "max_playlist_items": 10,
+            "proxy_mode": "auto",
+            "proxy_url": ""
         }
         self.config = self.load_config()
 
@@ -88,7 +92,7 @@ class Config:
 
     def get_download_path(self):
         """다운로드 경로 가져오기"""
-        path = Path(self.config.get("download_path", self.default_config["download_path"]))
+        path = Path(str(self.config.get("download_path", self.default_config["download_path"])))
         path.mkdir(parents=True, exist_ok=True)
         return path
 
@@ -187,8 +191,85 @@ class Config:
             if youtube_args:
                 opts['extractor_args'] = {'youtube': youtube_args}
 
+        # 프록시 설정
+        proxy_url = self.get_proxy()
+        if proxy_url:
+            opts['proxy'] = proxy_url
+
         # 재생목록 제한
         if self.get("playlist_download", False):
             opts['playlist_items'] = f"1-{self.get('max_playlist_items', 10)}"
 
-        return opts 
+        return opts
+
+    def get_proxy(self):
+        """프록시 URL 반환 (자동 감지 + 수동 설정 통합)"""
+        mode = self.get("proxy_mode", "auto")
+        if mode == "none":
+            return None
+        if mode == "manual":
+            return self._normalize_proxy_url(self.get("proxy_url", ""))
+        return self._detect_system_proxy()
+
+    @staticmethod
+    def _detect_system_proxy():
+        """시스템 프록시 자동 감지"""
+        for var in ('HTTPS_PROXY', 'https_proxy', 'HTTP_PROXY', 'http_proxy', 'ALL_PROXY', 'all_proxy'):
+            proxy_url = Config._normalize_proxy_url(os.environ.get(var, ''))
+            if proxy_url:
+                return proxy_url
+
+        if platform.system() == "Windows":
+            return Config._detect_windows_proxy()
+        return None 
+
+    @staticmethod
+    def _detect_windows_proxy():
+        try:
+            import winreg
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Internet Settings") as key:
+                enabled, _ = winreg.QueryValueEx(key, "ProxyEnable")
+                if not enabled:
+                    return None
+                proxy_server, _ = winreg.QueryValueEx(key, "ProxyServer")
+        except (OSError, ImportError):
+            return None
+
+        return Config._normalize_windows_proxy(proxy_server)
+
+    @staticmethod
+    def _normalize_windows_proxy(proxy_server):
+        if not proxy_server:
+            return None
+        entries = [part.strip() for part in str(proxy_server).split(';') if part.strip()]
+        for preferred in ('https=', 'http='):
+            for entry in entries:
+                lowered = entry.lower()
+                if lowered.startswith(preferred):
+                    return Config._normalize_proxy_url(entry.split('=', 1)[1])
+        for entry in entries:
+            if entry.lower().startswith('socks='):
+                return Config._normalize_proxy_url(entry.split('=', 1)[1], default_scheme='socks5')
+        return Config._normalize_proxy_url(entries[0].split('=', 1)[-1])
+
+    @staticmethod
+    def _normalize_proxy_url(value, default_scheme='http'):
+        url = str(value or '').strip()
+        if not url:
+            return None
+        if '://' not in url:
+            url = f"{default_scheme}://{url}"
+        return url
+
+    @staticmethod
+    def mask_proxy_url(value):
+        url = Config._normalize_proxy_url(value)
+        if not url:
+            return ""
+        parsed = urlsplit(url)
+        if '@' not in parsed.netloc:
+            return url
+        userinfo, host = parsed.netloc.rsplit('@', 1)
+        user = userinfo.split(':', 1)[0] or "***"
+        netloc = f"{user}:***@{host}"
+        return urlunsplit((parsed.scheme, netloc, parsed.path, parsed.query, parsed.fragment))
