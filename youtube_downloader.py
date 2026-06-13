@@ -219,7 +219,7 @@ class YouTubeDownloaderWindow(QMainWindow):
         open_folder_btn.clicked.connect(self.on_open_folder)
         settings_btn.clicked.connect(self.on_open_settings)
 
-        self.set_status("YouTube 또는 Pornhub 링크를 입력하고 다운로드 버튼을 누르세요.")
+        self.set_status("URL을 입력하고 다운로드 버튼을 누르세요.")
 
     def set_status(self, msg, replace=False):
         """스레드 안전한 상태 메시지 업데이트"""
