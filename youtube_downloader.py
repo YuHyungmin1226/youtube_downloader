@@ -1,9 +1,16 @@
 "YouTube 다운로더 메인 애플리케이션"
 import sys
+import argparse
 import re
 import threading
 import time
 from pathlib import Path
+
+try:
+    import truststore
+    truststore.inject_into_ssl()
+except ImportError:
+    pass
 
 import yt_dlp as youtube_dl
 from PySide6.QtCore import QObject, Signal
@@ -384,8 +391,27 @@ class YouTubeDownloaderWindow(QMainWindow):
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self.set_status("설정이 저장되었습니다.")
 
+def run_headless_download(url, download_path=None):
+    """GUI 없이 동일한 다운로드 로직을 실행해 자동화 검증을 지원합니다."""
+    def print_status(message, replace=False):
+        if not replace:
+            print(message, flush=True)
+
+    downloader = YouTubeDownloader(url, status_callback=print_status)
+    if download_path:
+        downloader.config.config["download_path"] = str(Path(download_path).expanduser())
+    return 0 if downloader.download_video() else 1
+
+
 def main():
     """애플리케이션 실행"""
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--headless-url")
+    parser.add_argument("--download-path")
+    args, _ = parser.parse_known_args()
+    if args.headless_url:
+        sys.exit(run_headless_download(args.headless_url, args.download_path))
+
     app = QApplication(sys.argv)
     win = YouTubeDownloaderWindow()
     win.show()

@@ -6,6 +6,7 @@ PyInstaller를 사용하여 실행 파일을 생성합니다.
 
 import os
 import platform
+import stat
 import sys
 import shutil
 import subprocess
@@ -187,7 +188,7 @@ def copy_to_release():
     # 새 파일 복사
     print("release 디렉토리로 복사 중...")
     if artifact.is_dir():
-        shutil.copytree(str(artifact), str(release_artifact))
+        shutil.copytree(str(artifact), str(release_artifact), symlinks=True)
     else:
         shutil.copy2(str(artifact), str(release_artifact))
 
@@ -211,7 +212,25 @@ def get_path_size(path):
     path = Path(path)
     if path.is_file():
         return path.stat().st_size
-    return sum(p.stat().st_size for p in path.rglob('*') if p.is_file())
+    return sum(
+        p.stat().st_size
+        for p in path.rglob('*')
+        if p.is_file() and not p.is_symlink()
+    )
+
+
+def write_path_to_zip(zipf, file_path, arcname):
+    """파일 또는 심볼릭 링크를 원래 형태로 ZIP에 기록합니다."""
+    if file_path.is_symlink():
+        info = zipfile.ZipInfo(arcname.as_posix())
+        info.create_system = 3
+        info.compress_type = zipfile.ZIP_DEFLATED
+        info.external_attr = (stat.S_IFLNK | 0o777) << 16
+        zipf.writestr(info, os.readlink(file_path))
+        return
+
+    if file_path.is_file():
+        zipf.write(file_path, arcname)
 
 def create_zip_package(release_artifact):
     """배포용 ZIP 패키지를 생성합니다."""
@@ -230,8 +249,11 @@ def create_zip_package(release_artifact):
         with zipfile.ZipFile(zip_name, 'w', zipfile.ZIP_DEFLATED) as zipf:
             if release_artifact.is_dir():
                 for file_path in release_artifact.rglob('*'):
-                    if file_path.is_file():
-                        zipf.write(file_path, file_path.relative_to(release_artifact.parent))
+                    write_path_to_zip(
+                        zipf,
+                        file_path,
+                        file_path.relative_to(release_artifact.parent),
+                    )
             else:
                 zipf.write(release_artifact, release_artifact.name)
 
@@ -252,6 +274,11 @@ def create_zip_package(release_artifact):
 
 def main():
     """메인 빌드 프로세스"""
+    if sys.version_info < (3, 10):
+        print("빌드 오류: 최신 yt-dlp는 Python 3.10 이상이 필요합니다.")
+        print("Python 3.12 가상환경에서 build.py를 다시 실행해주세요.")
+        return
+
     print("YouTube 다운로더 빌드 프로세스 시작")
     print("=" * 50)
 

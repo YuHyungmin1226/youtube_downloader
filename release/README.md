@@ -10,6 +10,8 @@ PySide6를 사용한 GUI 기반 YouTube 영상 다운로드 애플리케이션�
 - **소스 코드**: 이 저장소를 클론하여 실행
 
 ### ✅ 최신 수정사항
+- **사이트 호환성 개선**: Python 3.12, 최신 yt-dlp, 브라우저 요청 모방 지원
+- **HTTPS 필터 호환성 개선**: Windows/macOS 시스템 인증서 저장소 사용
 - **macOS 빌드 지원**: PyInstaller 데이터 경로와 `.app` 산출물 처리를 OS별로 분리
 - **macOS FFmpeg 설치 개선**: Intel/Apple Silicon용 FFmpeg 다운로드 및 탐색 경로 지원
 - **PySide6 호환성 개선**: 모든 Qt 상수를 PySide6에 맞게 수정
@@ -43,10 +45,10 @@ PySide6를 사용한 GUI 기반 YouTube 영상 다운로드 애플리케이션�
 
 - **Windows**: Windows 10/11 (64비트)
 - **macOS**: Intel 또는 Apple Silicon Mac
-- **Python 버전**: Python 3.7 이상 (Python 3.13 권장) - 소스 코드 실행 시에만 필요
+- **Python 버전**: Python 3.10 이상 (Python 3.12 권장) - 소스 실행 및 빌드 시에만 필요
 - **인터넷 연결**: 필수
 - **관리자 권한**: FFmpeg 설치 시에만 필요
-- **최소 디스크 공간**: 100MB 여유 공간
+- **최소 디스크 공간**: 1GB 여유 공간
 
 ## 🔧 설치 방법
 
@@ -134,7 +136,9 @@ python youtube_downloader.py
 ## 🔄 업데이트 내역
 
 ### v2.1.0 (최신)
-- ✅ yt-dlp 최신 버전 (2025.7.21) 지원
+- ✅ yt-dlp 최신 버전 (2026.7.4 이상) 지원
+- ✅ curl_cffi 브라우저 요청 모방 지원
+- ✅ 시스템 인증서 저장소 연동
 - ✅ PySide6 최신 버전 (6.x.x) 지원
 - ✅ requirements.txt 최신화 및 정리
 - ✅ README.md 상세 업데이트

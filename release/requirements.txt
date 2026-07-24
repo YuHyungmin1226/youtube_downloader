@@ -1,7 +1,9 @@
 # YouTube 다운로더 핵심 의존성
-yt-dlp>=2025.10.14
+yt-dlp>=2026.7.4
 PySide6>=6.10.3
 requests>=2.32.5
+curl-cffi>=0.11
+truststore>=0.10.4
 
 # 빌드 도구
 pyinstaller>=6.21.0
