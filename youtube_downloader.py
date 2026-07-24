@@ -27,7 +27,8 @@ from utils import check_ffmpeg_installed, open_folder, validate_url
 class YouTubeDownloader:
     """비디오 다운로더 로직 클래스 (YouTube, Pornhub 등 yt-dlp 지원 사이트)"""
 
-    YOUTUBE_ANDROID_FALLBACK_ERRORS = (
+    YOUTUBE_FALLBACK_CLIENT = "android_vr"
+    YOUTUBE_CLIENT_FALLBACK_ERRORS = (
         "http error 403",
         "requested format is not available",
         "only images are available",
@@ -44,6 +45,7 @@ class YouTubeDownloader:
         self.max_retries = self.config.get_max_retries()
         self.retry_delay = self.config.get_retry_delay()
         self.is_youtube = False
+        self.selected_quality = None
 
     def validate_url(self):
         """URL 유효성 검증"""
@@ -102,7 +104,12 @@ class YouTubeDownloader:
                     ydl.download([self.url])
 
                 if self.status_callback:
-                    self.status_callback("\n성공적으로 다운로드되었습니다.")
+                    quality_note = (
+                        f" (선택 화질: {self.selected_quality})"
+                        if self.selected_quality
+                        else ""
+                    )
+                    self.status_callback(f"\n성공적으로 다운로드되었습니다.{quality_note}")
                 if self.progress_callback:
                     self.progress_callback(100)
                 return True
@@ -114,14 +121,14 @@ class YouTubeDownloader:
                     message in error_msg
                     for message in self.YOUTUBE_ANDROID_FALLBACK_ERRORS[1:]
                 )
-                should_retry_android = self._should_retry_with_android(
+                should_retry_client = self._should_retry_with_compatible_client(
                     error_msg,
                     ydl_opts,
                     attempt,
                 )
 
                 if format_unavailable:
-                    if should_retry_android:
+                    if should_retry_client:
                         user_message += "현재 요청 방식으로 영상 포맷을 가져오지 못했습니다. YouTube 호환 모드로 전환해 재시도합니다."
                     else:
                         user_message += "요청한 영상 포맷을 사용할 수 없습니다. 재생 클라이언트 또는 화질 설정을 확인해주세요."
@@ -138,7 +145,7 @@ class YouTubeDownloader:
                 elif "geo-restricted" in error_msg or "geo restricted" in error_msg:
                     user_message += "지역 제한으로 인해 다운로드할 수 없습니다."
                 elif "http error 403" in error_msg or "http error 401" in error_msg:
-                    if should_retry_android:
+                    if should_retry_client:
                         user_message += "YouTube 파일 접근이 차단되었습니다. YouTube 호환 모드로 전환해 재시도합니다."
                     else:
                         user_message += "접근 권한이 없습니다. 설정에서 쿠키 또는 권장 요청 프로필을 사용해보세요."
@@ -148,8 +155,11 @@ class YouTubeDownloader:
                 if self.status_callback:
                     self.status_callback(user_message)
 
-                if should_retry_android:
-                    Config.set_youtube_player_client(ydl_opts, "android")
+                if should_retry_client:
+                    Config.set_youtube_player_client(
+                        ydl_opts,
+                        self.YOUTUBE_FALLBACK_CLIENT,
+                    )
 
                 if attempt < self.max_retries - 1:
                     if self.status_callback:
@@ -167,21 +177,28 @@ class YouTubeDownloader:
 
         return False
 
-    def _should_retry_with_android(self, error_msg, ydl_opts, attempt):
-        """YouTube 클라이언트 문제일 때 Android 클라이언트 재시도 여부를 반환합니다."""
+    def _should_retry_with_compatible_client(self, error_msg, ydl_opts, attempt):
+        """YouTube 클라이언트 문제일 때 권장 호환 프로필 재시도 여부를 반환합니다."""
         current_client = Config.get_youtube_player_client(ydl_opts)
         return (
             self.is_youtube
-            and current_client != "android"
+            and current_client != self.YOUTUBE_FALLBACK_CLIENT
             and any(
                 message in error_msg
-                for message in self.YOUTUBE_ANDROID_FALLBACK_ERRORS
+                for message in self.YOUTUBE_CLIENT_FALLBACK_ERRORS
             )
             and attempt < self.max_retries - 1
         )
 
     def my_hook(self, d):
         """yt-dlp 진행률 콜백"""
+        info = d.get('info_dict') or {}
+        height = info.get('height')
+        if height:
+            fps = info.get('fps')
+            fps_note = f", {fps:g}fps" if isinstance(fps, (int, float)) else ""
+            self.selected_quality = f"{height}p{fps_note}"
+
         if d['status'] == 'downloading':
             percent_str = re.sub(r'\x1b\[[0-9;]*m', '', d.get('_percent_str', '0%'))
             try:
@@ -202,6 +219,47 @@ class YouTubeDownloader:
                 self.status_callback("다운로드 완료. 후처리 중...")
             if self.progress_callback:
                 self.progress_callback(100)
+
+    def inspect_formats(self, player_client=None):
+        """다운로드 없이 제공 포맷과 현재 설정의 선택 결과를 반환합니다."""
+        self.validate_url()
+        ydl_opts = self.config.get_ydl_opts(is_youtube=self.is_youtube)
+        if self.is_youtube and player_client:
+            Config.set_youtube_player_client(ydl_opts, player_client)
+        ydl_opts['skip_download'] = True
+
+        ffmpeg_path = self.get_ffmpeg_path()
+        if ffmpeg_path:
+            ydl_opts['ffmpeg_location'] = ffmpeg_path
+
+        with youtube_dl.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(self.url, download=False)
+
+        formats = info.get('formats') or []
+        video_formats = [
+            fmt for fmt in formats
+            if fmt.get('vcodec') != 'none' and fmt.get('height')
+        ]
+        requested = info.get('requested_downloads') or [info]
+        selected_video = next(
+            (
+                fmt for fmt in requested
+                if fmt.get('vcodec') != 'none' and fmt.get('height')
+            ),
+            None,
+        )
+        return {
+            'title': info.get('title') or '',
+            'available_heights': sorted({
+                int(fmt['height']) for fmt in video_formats
+            }),
+            'selected_height': (
+                int(selected_video['height']) if selected_video else None
+            ),
+            'selected_format_id': (
+                selected_video.get('format_id') if selected_video else None
+            ),
+        }
 
 
 class SignalProxy(QObject):
@@ -403,12 +461,39 @@ def run_headless_download(url, download_path=None):
     return 0 if downloader.download_video() else 1
 
 
+def run_headless_inspect(url, player_client=None):
+    """GUI 없이 제공 해상도와 현재 선택 결과를 출력합니다."""
+    try:
+        result = YouTubeDownloader(url).inspect_formats(player_client)
+    except (ValueError, youtube_dl.utils.DownloadError) as exc:
+        print(f"포맷 확인 실패: {exc}", flush=True)
+        return 1
+
+    heights = ", ".join(f"{height}p" for height in result['available_heights'])
+    selected = (
+        f"{result['selected_height']}p"
+        if result['selected_height']
+        else "확인 불가"
+    )
+    print(f"제공 해상도: {heights or '확인 불가'}", flush=True)
+    print(
+        f"선택 해상도: {selected} "
+        f"(format_id={result['selected_format_id'] or 'unknown'})",
+        flush=True,
+    )
+    return 0
+
+
 def main():
     """애플리케이션 실행"""
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--headless-url")
+    parser.add_argument("--inspect-url")
+    parser.add_argument("--player-client")
     parser.add_argument("--download-path")
     args, _ = parser.parse_known_args()
+    if args.inspect_url:
+        sys.exit(run_headless_inspect(args.inspect_url, args.player_client))
     if args.headless_url:
         sys.exit(run_headless_download(args.headless_url, args.download_path))
 

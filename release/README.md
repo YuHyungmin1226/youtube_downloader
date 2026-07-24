@@ -12,6 +12,7 @@ PySide6를 사용한 GUI 기반 YouTube 영상 다운로드 애플리케이션�
 ### ✅ 최신 수정사항
 - **사이트 호환성 개선**: Python 3.12, 최신 yt-dlp, 브라우저 요청 모방 지원
 - **HTTPS 필터 호환성 개선**: Windows/macOS 시스템 인증서 저장소 사용
+- **최고 화질 선택 개선**: 해상도를 우선하고 YouTube 4K 포맷을 제공하는 권장 요청 프로필 사용
 - **macOS 빌드 지원**: PyInstaller 데이터 경로와 `.app` 산출물 처리를 OS별로 분리
 - **macOS FFmpeg 설치 개선**: Intel/Apple Silicon용 FFmpeg 다운로드 및 탐색 경로 지원
 - **PySide6 호환성 개선**: 모든 Qt 상수를 PySide6에 맞게 수정

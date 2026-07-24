@@ -179,13 +179,14 @@ class SettingsDialog(QDialog):
         
         self.player_client_combo = QComboBox()
         for label, value in (
-            ("Android 호환 프로필 (권장)", "android"),
+            ("Android VR 호환 프로필 (권장)", "android_vr"),
+            ("Android 기본 프로필 (저화질 호환)", "android"),
             ("웹 브라우저 프로필", "web"),
             ("모바일 웹 프로필", "mweb"),
             ("iOS 호환 프로필", "ios"),
         ):
             self.player_client_combo.addItem(label, value)
-        selected_client = self.config.get("player_client", "android")
+        selected_client = self.config.get("player_client", "android_vr")
         selected_index = self.player_client_combo.findData(selected_client)
         self.player_client_combo.setCurrentIndex(max(selected_index, 0))
         form_po.addRow("YouTube 요청 프로필:", self.player_client_combo)

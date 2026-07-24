@@ -10,7 +10,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 class Config:
     """설정 관리 클래스"""
-    CURRENT_CONFIG_VERSION = 2
+    CURRENT_CONFIG_VERSION = 3
 
     def __init__(self):
         # Windows에서는 숨김 파일 대신 일반 파일로 저장
@@ -39,7 +39,7 @@ class Config:
             "use_po_token": False,
             "po_token": "",
             "visitor_data": "",
-            "player_client": "android",
+            "player_client": "android_vr",
             "subtitle_download": False,
             "subtitle_language": "ko",
             "playlist_download": False,
@@ -71,6 +71,12 @@ class Config:
                     if config_version < 2:
                         if config.get("player_client") == "web":
                             config["player_client"] = "android"
+
+                    if config_version < 3:
+                        if config.get("player_client") == "android":
+                            config["player_client"] = "android_vr"
+
+                    if config_version < self.CURRENT_CONFIG_VERSION:
                         config["config_version"] = self.CURRENT_CONFIG_VERSION
                         self._config_needs_save = True
                     return config
@@ -168,9 +174,12 @@ class Config:
                 height_match = re.search(r'\d+', str(preferred))
                 if height_match:
                     h = height_match.group()
-                    format_str = f"bestvideo[height<={h}]+bestaudio/best[height<={h}]/best"
+                    format_str = (
+                        f"bestvideo*[height<={h}]+bestaudio/"
+                        f"bestvideo*[height<={h}]"
+                    )
                 else:
-                    format_str = "bestvideo+bestaudio/best"
+                    format_str = "bestvideo*+bestaudio/bestvideo*"
 
         opts = {
             'format': format_str,
@@ -182,6 +191,8 @@ class Config:
             'fragment_retries': self.get_max_retries(),
             'ignoreerrors': False,
         }
+        if not self.is_audio_only() and quality_val != "worst":
+            opts['format_sort'] = ['res', 'fps', 'hdr:12', 'br']
 
         # 자막 다운로드 설정
         if self.get("subtitle_download", False):
