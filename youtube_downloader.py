@@ -77,6 +77,7 @@ class YouTubeDownloader:
             'progress_hooks': [self.my_hook],
             'ffmpeg_location': ffmpeg_path,
         })
+        switched_to_android_client = False
 
         for attempt in range(self.max_retries):
             try:
@@ -95,6 +96,12 @@ class YouTubeDownloader:
             except youtube_dl.utils.DownloadError as e:
                 error_msg = str(e).lower()
                 user_message = f"\n다운로드 오류 (시도 {attempt + 1}/{self.max_retries}): "
+                should_retry_android = (
+                    self.is_youtube
+                    and not switched_to_android_client
+                    and "http error 403" in error_msg
+                    and attempt < self.max_retries - 1
+                )
 
                 if "video unavailable" in error_msg or "not available" in error_msg:
                     user_message += "영상을 찾을 수 없거나 비공개/삭제된 상태입니다."
@@ -109,12 +116,19 @@ class YouTubeDownloader:
                 elif "geo-restricted" in error_msg or "geo restricted" in error_msg:
                     user_message += "지역 제한으로 인해 다운로드할 수 없습니다."
                 elif "http error 403" in error_msg or "http error 401" in error_msg:
-                    user_message += "접근 권한이 없습니다. 설정에서 쿠키를 설정해보세요."
+                    if should_retry_android:
+                        user_message += "YouTube 파일 접근이 차단되었습니다. Android 클라이언트로 전환해 재시도합니다."
+                    else:
+                        user_message += "접근 권한이 없습니다. 설정에서 쿠키 또는 Android 재생 클라이언트를 사용해보세요."
                 else:
                     user_message += "알 수 없는 다운로드 오류가 발생했습니다."
 
                 if self.status_callback:
                     self.status_callback(user_message)
+
+                if should_retry_android:
+                    Config.set_youtube_player_client(ydl_opts, "android")
+                    switched_to_android_client = True
 
                 if attempt < self.max_retries - 1:
                     if self.status_callback:
@@ -352,4 +366,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

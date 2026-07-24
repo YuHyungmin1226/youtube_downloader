@@ -36,7 +36,7 @@ class Config:
             "use_po_token": False,
             "po_token": "",
             "visitor_data": "",
-            "player_client": "web",
+            "player_client": "android",
             "subtitle_download": False,
             "subtitle_language": "ko",
             "playlist_download": False,
@@ -179,15 +179,16 @@ class Config:
             elif self.get("cookies_source", "file") == "browser" and self.get("cookies_browser"):
                 opts['cookiesfrombrowser'] = (self.get("cookies_browser"),)
 
-        # PO Token 및 Extractor Args 설정 (YouTube 전용)
-        if is_youtube and self.get("use_po_token", False):
+        # YouTube 전용 extractor_args 설정
+        if is_youtube:
             youtube_args = {}
-            if self.get("po_token"):
-                youtube_args['po_token'] = [self.get("po_token")]
-            if self.get("visitor_data"):
-                youtube_args['visitor_data'] = [self.get("visitor_data")]
             if self.get("player_client"):
                 youtube_args['player_client'] = [self.get("player_client")]
+            if self.get("use_po_token", False):
+                if self.get("po_token"):
+                    youtube_args['po_token'] = [self.get("po_token")]
+                if self.get("visitor_data"):
+                    youtube_args['visitor_data'] = [self.get("visitor_data")]
             if youtube_args:
                 opts['extractor_args'] = {'youtube': youtube_args}
 
@@ -201,6 +202,14 @@ class Config:
             opts['playlist_items'] = f"1-{self.get('max_playlist_items', 10)}"
 
         return opts
+
+    @staticmethod
+    def set_youtube_player_client(ydl_opts, player_client):
+        """yt-dlp 옵션에 YouTube player_client를 설정합니다."""
+        extractor_args = ydl_opts.setdefault('extractor_args', {})
+        youtube_args = extractor_args.setdefault('youtube', {})
+        youtube_args['player_client'] = [player_client]
+        return ydl_opts
 
     def get_proxy(self):
         """프록시 URL 반환 (자동 감지 + 수동 설정 통합)"""
