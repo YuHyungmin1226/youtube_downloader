@@ -10,6 +10,8 @@ from urllib.parse import urlsplit, urlunsplit
 
 class Config:
     """설정 관리 클래스"""
+    CURRENT_CONFIG_VERSION = 2
+
     def __init__(self):
         # Windows에서는 숨김 파일 대신 일반 파일로 저장
         if platform.system() == "Windows":
@@ -17,6 +19,7 @@ class Config:
         else:
             self.config_file = Path.home() / ".youtube_downloader_config.json"
         self.default_config = {
+            "config_version": self.CURRENT_CONFIG_VERSION,
             "download_path": str(Path.home() / "Videos"),
             "ffmpeg_path": "",
             "video_format": "mp4",
@@ -44,7 +47,10 @@ class Config:
             "proxy_mode": "auto",
             "proxy_url": ""
         }
+        self._config_needs_save = False
         self.config = self.load_config()
+        if self._config_needs_save:
+            self.save_config()
 
     def load_config(self):
         """설정 파일 로드"""
@@ -52,10 +58,21 @@ class Config:
             if self.config_file.exists():
                 with open(self.config_file, 'r', encoding='utf-8') as f:
                     config = json.load(f)
+                    try:
+                        config_version = int(config.get("config_version", 1))
+                    except (TypeError, ValueError):
+                        config_version = 1
+
                     # 기본값과 병합
                     for key, value in self.default_config.items():
                         if key not in config:
                             config[key] = value
+
+                    if config_version < 2:
+                        if config.get("player_client") == "web":
+                            config["player_client"] = "android"
+                        config["config_version"] = self.CURRENT_CONFIG_VERSION
+                        self._config_needs_save = True
                     return config
             else:
                 return self.default_config.copy()
@@ -210,6 +227,18 @@ class Config:
         youtube_args = extractor_args.setdefault('youtube', {})
         youtube_args['player_client'] = [player_client]
         return ydl_opts
+
+    @staticmethod
+    def get_youtube_player_client(ydl_opts):
+        """yt-dlp 옵션에 설정된 첫 번째 YouTube player_client를 반환합니다."""
+        player_clients = (
+            ydl_opts.get('extractor_args', {})
+            .get('youtube', {})
+            .get('player_client', [])
+        )
+        if isinstance(player_clients, str):
+            return player_clients
+        return player_clients[0] if player_clients else None
 
     def get_proxy(self):
         """프록시 URL 반환 (자동 감지 + 수동 설정 통합)"""

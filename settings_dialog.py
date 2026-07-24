@@ -162,7 +162,7 @@ class SettingsDialog(QDialog):
         vbox_security.addWidget(cookies_group)
         
         # 2. PO Token 설정 그룹
-        po_token_group = QGroupBox("유튜브 보안 우회 (PO Token)")
+        po_token_group = QGroupBox("유튜브 연결 설정")
         form_po = QFormLayout(po_token_group)
         
         self.po_token_check = QCheckBox()
@@ -178,9 +178,17 @@ class SettingsDialog(QDialog):
         form_po.addRow("Visitor Data:", self.visitor_data_edit)
         
         self.player_client_combo = QComboBox()
-        self.player_client_combo.addItems(["web", "mweb", "ios", "android"])
-        self.player_client_combo.setCurrentText(self.config.get("player_client", "web"))
-        form_po.addRow("재생 클라이언트:", self.player_client_combo)
+        for label, value in (
+            ("Android 호환 프로필 (권장)", "android"),
+            ("웹 브라우저 프로필", "web"),
+            ("모바일 웹 프로필", "mweb"),
+            ("iOS 호환 프로필", "ios"),
+        ):
+            self.player_client_combo.addItem(label, value)
+        selected_client = self.config.get("player_client", "android")
+        selected_index = self.player_client_combo.findData(selected_client)
+        self.player_client_combo.setCurrentIndex(max(selected_index, 0))
+        form_po.addRow("YouTube 요청 프로필:", self.player_client_combo)
         
         vbox_security.addWidget(po_token_group)
         self.tab_widget.addTab(tab_security, "보안 및 쿠키")
@@ -239,7 +247,6 @@ class SettingsDialog(QDialog):
         """PO Token 사용 체크박스 상태 변경 처리"""
         self.po_token_edit.setEnabled(checked)
         self.visitor_data_edit.setEnabled(checked)
-        self.player_client_combo.setEnabled(checked)
 
     def on_proxy_mode_changed(self):
         self.proxy_url_edit.setEnabled(self.proxy_mode_combo.currentText() == "수동 설정")
@@ -277,7 +284,7 @@ class SettingsDialog(QDialog):
             "use_po_token": self.po_token_check.isChecked(),
             "po_token": self.po_token_edit.text(),
             "visitor_data": self.visitor_data_edit.text(),
-            "player_client": self.player_client_combo.currentText(),
+            "player_client": self.player_client_combo.currentData(),
             "auto_open_folder": self.auto_open_check.isChecked(),
             "max_retries": self.retry_spin.value(),
             "retry_delay": self.delay_spin.value(),
