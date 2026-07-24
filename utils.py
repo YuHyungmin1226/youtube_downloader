@@ -22,14 +22,26 @@ def check_ffmpeg_installed(debug=False):
     ffmpeg_path = shutil.which("ffmpeg.exe") or shutil.which("ffmpeg")
     debug_log(f"shutil.which: {ffmpeg_path}")
 
-    # 2. macOS Homebrew 등 추가 경로
+    # 2. macOS Homebrew 및 앱 번들 실행 시 누락되기 쉬운 추가 경로
     if not ffmpeg_path and platform.system() == "Darwin":
-        if os.path.exists("/opt/homebrew/bin/ffmpeg"):
-            ffmpeg_path = "/opt/homebrew/bin/ffmpeg"
-            debug_log("Found in /opt/homebrew/bin/ffmpeg")
-        elif os.path.exists("/usr/local/bin/ffmpeg"):
-            ffmpeg_path = "/usr/local/bin/ffmpeg"
-            debug_log("Found in /usr/local/bin/ffmpeg")
+        possible_paths = [
+            Path("/opt/homebrew/bin/ffmpeg"),
+            Path("/usr/local/bin/ffmpeg"),
+            Path("/usr/bin/ffmpeg"),
+            Path.home() / ".local" / "ffmpeg" / "ffmpeg",
+        ]
+        ffmpeg_dir = Path.home() / ".local" / "ffmpeg"
+        if ffmpeg_dir.exists():
+            for binary_path in ffmpeg_dir.glob("**/ffmpeg"):
+                if binary_path.is_file():
+                    possible_paths.insert(0, binary_path)
+                    break
+
+        for path in possible_paths:
+            if path.exists():
+                ffmpeg_path = str(path)
+                debug_log(f"Found in: {ffmpeg_path}")
+                break
 
     # 3. Windows 일반 경로 및 홈 디렉토리 내 ffmpeg 폴더 탐색
     if not ffmpeg_path and platform.system() == "Windows":

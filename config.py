@@ -242,11 +242,11 @@ class Config:
         if not proxy_server:
             return None
         entries = [part.strip() for part in str(proxy_server).split(';') if part.strip()]
-        for preferred in ('https=', 'http='):
+        for preferred, scheme in (('https=', 'https'), ('http=', 'http')):
             for entry in entries:
                 lowered = entry.lower()
                 if lowered.startswith(preferred):
-                    return Config._normalize_proxy_url(entry.split('=', 1)[1])
+                    return Config._normalize_proxy_url(entry.split('=', 1)[1], default_scheme=scheme)
         for entry in entries:
             if entry.lower().startswith('socks='):
                 return Config._normalize_proxy_url(entry.split('=', 1)[1], default_scheme='socks5')

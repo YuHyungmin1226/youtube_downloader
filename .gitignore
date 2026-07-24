@@ -185,6 +185,7 @@ tmp/
 # 배포 파일 (큰 파일들)
 release/*.exe
 release/*.zip
+release/*.app/
 *.exe
 
 # IDE 설정

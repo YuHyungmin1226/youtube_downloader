@@ -3,6 +3,7 @@ FFmpeg 자동 설치 모듈
 """
 import os
 import platform
+import re
 import sys
 import zipfile
 import tarfile
@@ -30,9 +31,7 @@ class FFmpegInstaller:
             return f"{base_url}/ffmpeg-master-latest-win32-gpl.zip"
 
         if self.system == "Darwin":  # macOS
-            if "arm64" in self.machine.lower():
-                return f"{base_url}/ffmpeg-master-latest-macos-arm64-gpl.zip"
-            return f"{base_url}/ffmpeg-master-latest-macos64-gpl.zip"
+            return self.get_macos_ffmpeg_url()
 
         if self.system == "Linux":
             if "64" in self.machine or "x86_64" in self.machine:
@@ -40,6 +39,25 @@ class FFmpegInstaller:
             return f"{base_url}/ffmpeg-master-latest-linux32-gpl.tar.xz"
 
         raise ValueError(f"지원하지 않는 운영체제: {self.system}")
+
+    def get_macos_ffmpeg_url(self):
+        """macOS용 FFmpeg ZIP URL을 반환합니다."""
+        arch = "arm64" if self.machine.lower() in ("arm64", "aarch64") else "amd64"
+        index_url = "https://ffmpeg.martin-riedl.de/"
+        try:
+            response = requests.get(index_url, timeout=15)
+            response.raise_for_status()
+            release_html = response.text.split("Download Release Build", 1)[-1]
+            pattern = rf'href="(/download/macos/{arch}/[^"]+/ffmpeg\.zip)"'
+            match = re.search(pattern, release_html)
+            if match:
+                return f"{index_url.rstrip('/')}{match.group(1)}"
+        except requests.exceptions.RequestException:
+            pass
+
+        if arch == "amd64":
+            return "https://evermeet.cx/ffmpeg/getrelease/zip"
+        raise ValueError("macOS Apple Silicon용 FFmpeg 다운로드 URL을 확인할 수 없습니다. Homebrew로 FFmpeg를 설치하거나 나중에 다시 시도하세요.")
 
     def get_install_path(self):
         """FFmpeg 설치 경로 반환"""
@@ -84,24 +102,55 @@ class FFmpegInstaller:
     def extract_archive(self, archive_path, extract_path):
         """압축 파일 해제"""
         try:
+            suffixes = ''.join(archive_path.suffixes)
             if archive_path.suffix == '.zip':
                 with zipfile.ZipFile(archive_path, 'r') as zip_ref:
-                    zip_ref.extractall(extract_path)
-            elif archive_path.suffix in ['.tar.xz', '.tar.gz']:
+                    self._safe_extract_zip(zip_ref, extract_path)
+            elif suffixes.endswith(('.tar.xz', '.tar.gz')):
                 with tarfile.open(archive_path, 'r:*') as tar_ref:
-                    tar_ref.extractall(extract_path)
+                    self._safe_extract_tar(tar_ref, extract_path)
             return True
         except (zipfile.BadZipFile, tarfile.TarError, IOError) as e:
             if self.status_callback:
                 self.status_callback(f"압축 해제 오류: {e}")
             return False
 
+    @staticmethod
+    def _is_within_directory(base_dir, target_path):
+        base_dir = Path(base_dir).resolve()
+        target_path = Path(target_path).resolve()
+        try:
+            target_path.relative_to(base_dir)
+            return True
+        except ValueError:
+            return False
+
+    def _safe_extract_zip(self, zip_ref, extract_path):
+        for member in zip_ref.infolist():
+            target = Path(extract_path) / member.filename
+            if not self._is_within_directory(extract_path, target):
+                raise zipfile.BadZipFile(f"안전하지 않은 ZIP 경로: {member.filename}")
+        zip_ref.extractall(extract_path)
+
+    def _safe_extract_tar(self, tar_ref, extract_path):
+        for member in tar_ref.getmembers():
+            target = Path(extract_path) / member.name
+            if not self._is_within_directory(extract_path, target):
+                raise tarfile.TarError(f"안전하지 않은 TAR 경로: {member.name}")
+        tar_ref.extractall(extract_path)
+
     def find_ffmpeg_binary(self, extract_path):
         """압축 해제된 폴더에서 ffmpeg 실행 파일 찾기"""
         for root, _, files in os.walk(extract_path):
             for file in files:
                 if file in ('ffmpeg', 'ffmpeg.exe'):
-                    return Path(root) / file
+                    binary_path = Path(root) / file
+                    if self.system != "Windows":
+                        try:
+                            binary_path.chmod(binary_path.stat().st_mode | 0o755)
+                        except OSError:
+                            pass
+                    return binary_path
         return None
 
     def install_ffmpeg(self):

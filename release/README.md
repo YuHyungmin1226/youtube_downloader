@@ -2,13 +2,16 @@
 
 PySide6를 사용한 GUI 기반 YouTube 영상 다운로드 애플리케이션입니다.
 
-## 📦 최신 빌드 (2025.08.11)
+## 📦 최신 빌드 (2026.07.24)
 
 ### 🚀 바로 다운로드
-- **Windows 실행 파일**: [YouTube_Downloader_v2025.08.11_Windows.zip](release/YouTube_Downloader_v2025.08.11_Windows.zip) (228MB)
+- **Windows 실행 파일**: `release/YouTube_Downloader_vYYYY.MM.DD_Windows.zip`
+- **macOS 앱**: `release/YouTube_Downloader_vYYYY.MM.DD_macOS.zip`
 - **소스 코드**: 이 저장소를 클론하여 실행
 
 ### ✅ 최신 수정사항
+- **macOS 빌드 지원**: PyInstaller 데이터 경로와 `.app` 산출물 처리를 OS별로 분리
+- **macOS FFmpeg 설치 개선**: Intel/Apple Silicon용 FFmpeg 다운로드 및 탐색 경로 지원
 - **PySide6 호환성 개선**: 모든 Qt 상수를 PySide6에 맞게 수정
 - **Deprecated 메서드 수정**: `exec_()` → `exec()` 변경
 - **예외 처리 강화**: 구체적인 예외 타입 지정
@@ -18,7 +21,7 @@ PySide6를 사용한 GUI 기반 YouTube 영상 다운로드 애플리케이션�
 ### 🔧 설치 없이 바로 실행
 1. 위 ZIP 파일을 다운로드
 2. 압축 해제
-3. `YouTube_Downloader.exe` 실행
+3. Windows는 `YouTube_Downloader.exe`, macOS는 `YouTube_Downloader.app` 실행
 4. Python 설치 불필요!
 
 ## 🚀 주요 기능
@@ -39,6 +42,7 @@ PySide6를 사용한 GUI 기반 YouTube 영상 다운로드 애플리케이션�
 ## 📋 시스템 요구사항
 
 - **Windows**: Windows 10/11 (64비트)
+- **macOS**: Intel 또는 Apple Silicon Mac
 - **Python 버전**: Python 3.7 이상 (Python 3.13 권장) - 소스 코드 실행 시에만 필요
 - **인터넷 연결**: 필수
 - **관리자 권한**: FFmpeg 설치 시에만 필요
@@ -47,9 +51,9 @@ PySide6를 사용한 GUI 기반 YouTube 영상 다운로드 애플리케이션�
 ## 🔧 설치 방법
 
 ### 방법 1: 실행 파일 사용 (권장)
-1. [최신 릴리즈](release/YouTube_Downloader_v2025.08.11_Windows.zip) 다운로드
+1. `release` 폴더에서 운영체제에 맞는 ZIP 다운로드
 2. ZIP 파일 압축 해제
-3. `YouTube_Downloader.exe` 실행
+3. Windows는 `YouTube_Downloader.exe`, macOS는 `YouTube_Downloader.app` 실행
 4. **Python 설치 불필요!**
 
 ### 방법 2: 소스 코드에서 실행
@@ -60,7 +64,12 @@ cd youtube_downloader
 
 # 2. 가상환경 생성 (권장)
 python -m venv venv
+
+# Windows
 venv\Scripts\activate
+
+# macOS/Linux
+source venv/bin/activate
 
 # 3. 의존성 설치
 pip install -r requirements.txt
@@ -159,8 +168,8 @@ youtube_downloader/
 ├── requirements.txt       # Python 의존성
 ├── README.md             # 프로젝트 문서
 └── release/              # 배포 파일
-    ├── YouTube_Downloader.exe
-    ├── INSTALL.txt
+    ├── YouTube_Downloader.exe 또는 YouTube_Downloader.app
+    ├── YouTube_Downloader_vYYYY.MM.DD_<OS>.zip
     └── README.md
 ```
 
