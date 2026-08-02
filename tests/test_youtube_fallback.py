@@ -2,7 +2,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from config import Config
 from youtube_downloader import YouTubeDownloader
@@ -110,6 +110,46 @@ class ConfigQualitySelectionTests(unittest.TestCase):
             "bestvideo*[height<=1080]+bestaudio/"
             "bestvideo*[height<=1080]",
         )
+
+    def test_building_options_does_not_create_download_directory(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            download_path = Path(temp_dir) / "disconnected-volume" / "Videos"
+            config = self.create_config()
+            config.config["download_path"] = str(download_path)
+
+            opts = config.get_ydl_opts()
+
+            self.assertFalse(download_path.exists())
+            self.assertEqual(
+                opts["outtmpl"],
+                str(download_path / "%(title)s.%(ext)s"),
+            )
+
+
+class DownloadPathTests(unittest.TestCase):
+    def test_unavailable_download_path_is_reported_without_crashing(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            blocking_file = Path(temp_dir) / "external-drive"
+            blocking_file.write_text("not a directory", encoding="utf-8")
+            download_path = blocking_file / "Videos"
+            messages = []
+
+            downloader = YouTubeDownloader.__new__(YouTubeDownloader)
+            downloader.status_callback = messages.append
+            downloader.progress_callback = None
+            downloader.config = Mock()
+            downloader.config.get_download_path.return_value = download_path
+
+            with patch.object(downloader, "validate_url"), patch.object(
+                downloader,
+                "get_ffmpeg_path",
+                return_value="/usr/bin/ffmpeg",
+            ):
+                result = downloader.download_video()
+
+            self.assertFalse(result)
+            self.assertTrue(messages)
+            self.assertIn("다운로드 경로 생성에 실패했습니다", messages[-1])
 
 
 class YouTubeFallbackTests(unittest.TestCase):

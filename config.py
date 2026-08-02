@@ -115,9 +115,10 @@ class Config:
 
     def get_download_path(self):
         """다운로드 경로 가져오기"""
-        path = Path(str(self.config.get("download_path", self.default_config["download_path"])))
-        path.mkdir(parents=True, exist_ok=True)
-        return path
+        return Path(str(self.config.get(
+            "download_path",
+            self.default_config["download_path"],
+        )))
 
     def set_download_path(self, path):
         """다운로드 경로 설정"""
