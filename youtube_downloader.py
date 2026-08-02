@@ -1,10 +1,13 @@
 "YouTube 다운로더 메인 애플리케이션"
 import sys
+import os
 import argparse
 import re
 import threading
 import time
 from pathlib import Path
+
+from PySide6.QtGui import QIcon
 
 try:
     import truststore
@@ -13,15 +16,61 @@ except ImportError:
     pass
 
 import yt_dlp as youtube_dl
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, Signal, Qt
 from PySide6.QtWidgets import (
-    QApplication, QDialog, QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMessageBox, QProgressBar, QPushButton, QTextEdit, QVBoxLayout, QWidget
+    QApplication, QDialog, QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMessageBox, QProgressBar, QPushButton, QTextEdit, QVBoxLayout, QWidget, QFrame
 )
 
 from config import Config
 from ffmpeg_installer import FFmpegInstaller
 from settings_dialog import SettingsDialog
 from utils import check_ffmpeg_installed, open_folder, validate_url
+
+STYLE = (
+    "QMainWindow { background-color: #121212; }"
+    "QDialog { background-color: #1e1e1e; }"
+    "#TitleBar { background-color: #1e1e1e; border-bottom: 1px solid #333; }"
+    "QPushButton { background-color: #2d2d2d; color: #eee; border: 1px solid #555; "
+    "font-size: 13px; padding: 5px 12px; border-radius: 4px; outline: none; }"
+    "QPushButton:hover { background-color: #3a3a3a; }"
+    "QPushButton:pressed { background-color: #454545; }"
+    "QPushButton:disabled { color: #555; background-color: #202020; border-color: #333; }"
+    "#TitleBar QPushButton { background: transparent; border: none; font-size: 14px; padding: 0; border-radius: 0; }"
+    "#TitleBar QPushButton:hover { background-color: rgba(255, 255, 255, 0.1); }"
+    "#TitleBar QPushButton:pressed { background-color: rgba(255, 255, 255, 0.2); }"
+    "QLineEdit { background-color: #1e1e1e; color: #eee; border: 1px solid #444; "
+    "border-radius: 4px; padding: 6px; selection-background-color: #3578e5; }"
+    "QLineEdit:focus { border: 1px solid #3578e5; }"
+    "QLabel { color: #aaa; font-size: 13px; }"
+    "#TitleLabel { color: #eee; font-weight: bold; font-size: 12px; }"
+    "QProgressBar { border: 1px solid #444; border-radius: 3px; background-color: #222;"
+    " color: #eee; text-align: center; font-size: 11px; height: 18px; }"
+    "QProgressBar::chunk { background-color: #3578e5; }"
+    "QTextEdit { background-color: #1e1e1e; color: #eee; border: 1px solid #444; "
+    "border-radius: 4px; padding: 8px; font-family: Consolas, Monaco, monospace; font-size: 12px; }"
+    "QTabWidget::pane { border: 1px solid #444; background: #1e1e1e; top: -1px; }"
+    "QTabBar::tab { background: #2d2d2d; color: #aaa; border: 1px solid #444; border-bottom: none; "
+    "border-top-left-radius: 4px; border-top-right-radius: 4px; padding: 6px 12px; margin-right: 2px; }"
+    "QTabBar::tab:selected { background: #1e1e1e; color: #eee; border-bottom: 1px solid #1e1e1e; }"
+    "QTabBar::tab:hover { background: #3a3a3a; color: #eee; }"
+    "QComboBox { background-color: #2d2d2d; color: #eee; border: 1px solid #444; border-radius: 4px; padding: 4px 8px; }"
+    "QComboBox:on { border: 1px solid #3578e5; }"
+    "QComboBox QAbstractItemView { background-color: #1e1e1e; color: #eee; selection-background-color: #3578e5; border: 1px solid #444; }"
+    "QSpinBox { background-color: #2d2d2d; color: #eee; border: 1px solid #444; border-radius: 4px; padding: 4px; }"
+    "QCheckBox { color: #eee; }"
+    "QCheckBox::indicator { width: 14px; height: 14px; border: 1px solid #444; background-color: #2d2d2d; border-radius: 2px; }"
+    "QCheckBox::indicator:checked { background-color: #3578e5; border-color: #3578e5; }"
+    "QGroupBox { border: 1px solid #444; border-radius: 6px; margin-top: 12px; font-weight: bold; color: #eee; padding-top: 12px; }"
+    "QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; left: 8px; padding: 0 3px; color: #4a9eff; }"
+    "QMessageBox { background-color: #1e1e1e; }"
+    "QMessageBox QLabel { color: #eee; font-size: 13px; }"
+    "QMessageBox QPushButton { background-color: #2d2d2d; color: #eee; border: 1px solid #555; "
+    "border-radius: 4px; min-width: 72px; min-height: 28px; padding: 2px 12px; }"
+    "QMessageBox QPushButton:hover { background-color: #3a3a3a; }"
+    "QMessageBox QPushButton:pressed { background-color: #454545; }"
+    "QMessageBox QPushButton:default { border: 2px solid #3578e5; }"
+)
+
 
 
 class YouTubeDownloader:
@@ -278,11 +327,62 @@ class YouTubeDownloaderWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("비디오 다운로드 도구 (PySide6)")
-        self.setFixedSize(700, 400)
+        self.setFixedSize(700, 435)
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
         self.config = Config()
+        self._drag_pos = None
+
+        # 윈도우 아이콘 설정
+        icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icon.png")
+        if getattr(sys, "frozen", False):
+            icon_path = os.path.join(os.path.dirname(sys.executable), "icon.png")
+            if not os.path.exists(icon_path):
+                meipass = getattr(sys, "_MEIPASS", None)
+                if meipass:
+                    icon_path = os.path.join(meipass, "icon.png")
+        if os.path.exists(icon_path):
+            self.setWindowIcon(QIcon(icon_path))
+
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
-        self.layout = QVBoxLayout(self.central_widget)
+        self.main_layout = QVBoxLayout(self.central_widget)
+        self.main_layout.setContentsMargins(0, 0, 0, 0)
+        self.main_layout.setSpacing(0)
+
+        # 타이틀 바
+        self.title_bar = QFrame()
+        self.title_bar.setObjectName("TitleBar")
+        self.title_bar.setFixedHeight(35)
+        self.title_bar_layout = QHBoxLayout(self.title_bar)
+        self.title_bar_layout.setContentsMargins(15, 0, 0, 0)
+        self.title_bar_layout.setSpacing(0)
+
+        self.title_label = QLabel("비디오 다운로드 도구 (PySide6)")
+        self.title_label.setObjectName("TitleLabel")
+        self.title_bar_layout.addWidget(self.title_label)
+        self.title_bar_layout.addStretch()
+
+        self.min_btn = QPushButton("-")
+        self.min_btn.setFixedSize(40, 35)
+        self.min_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.min_btn.clicked.connect(self.showMinimized)
+
+        self.close_btn = QPushButton("x")
+        self.close_btn.setFixedSize(40, 35)
+        self.close_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.close_btn.clicked.connect(self.close)
+        self.close_btn.setStyleSheet("QPushButton:hover { background-color: #e81123; color: white; }")
+
+        self.title_bar_layout.addWidget(self.min_btn)
+        self.title_bar_layout.addWidget(self.close_btn)
+        self.main_layout.addWidget(self.title_bar)
+
+        # 컨텐츠 영역
+        self.content_widget = QWidget()
+        self.layout = QVBoxLayout(self.content_widget)
+        self.layout.setContentsMargins(15, 15, 15, 15)
+        self.layout.setSpacing(10)
+        self.main_layout.addWidget(self.content_widget)
 
         self.url_label = QLabel("비디오 링크 입력:")
         self.url_edit = QLineEdit()
@@ -449,6 +549,25 @@ class YouTubeDownloaderWindow(QMainWindow):
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self.set_status("설정이 저장되었습니다.")
 
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            child = self.childAt(event.position().toPoint())
+            draggable = {self.title_bar, self.title_label, self.central_widget, self.content_widget}
+            if child is None or child in draggable:
+                self._drag_pos = event.globalPosition().toPoint()
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self._drag_pos is not None:
+            delta = event.globalPosition().toPoint() - self._drag_pos
+            self.move(self.x() + delta.x(), self.y() + delta.y())
+            self._drag_pos = event.globalPosition().toPoint()
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        self._drag_pos = None
+        super().mouseReleaseEvent(event)
+
 def run_headless_download(url, download_path=None):
     """GUI 없이 동일한 다운로드 로직을 실행해 자동화 검증을 지원합니다."""
     def print_status(message, replace=False):
@@ -498,6 +617,7 @@ def main():
         sys.exit(run_headless_download(args.headless_url, args.download_path))
 
     app = QApplication(sys.argv)
+    app.setStyleSheet(STYLE)
     win = YouTubeDownloaderWindow()
     win.show()
     sys.exit(app.exec())
