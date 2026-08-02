@@ -2,10 +2,11 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from config import Config
-from youtube_downloader import YouTubeDownloader
+from youtube_downloader import YouTubeDownloader, YouTubeDownloaderWindow
 
 
 class ConfigMigrationTests(unittest.TestCase):
@@ -150,6 +151,57 @@ class DownloadPathTests(unittest.TestCase):
             self.assertFalse(result)
             self.assertTrue(messages)
             self.assertIn("다운로드 경로 생성에 실패했습니다", messages[-1])
+
+
+class ProgressOutputTests(unittest.TestCase):
+    def test_download_progress_updates_bar_without_status_message(self):
+        downloader = YouTubeDownloader.__new__(YouTubeDownloader)
+        downloader.config = Mock()
+        downloader.config.should_show_progress.return_value = True
+        downloader.last_percent = 0.0
+        downloader.selected_quality = None
+        status_messages = []
+        progress_updates = []
+        downloader.status_callback = status_messages.append
+        downloader.progress_callback = progress_updates.append
+
+        downloader.my_hook({
+            "status": "downloading",
+            "_percent_str": "42.0%",
+            "info_dict": {"height": 1080},
+        })
+
+        self.assertEqual(progress_updates, [42.0])
+        self.assertEqual(status_messages, [])
+
+    def test_status_messages_are_always_appended(self):
+        class FakeCursor:
+            class MoveOperation:
+                End = object()
+
+        class FakeStatusText:
+            def __init__(self):
+                self.messages = []
+
+            def append(self, message):
+                self.messages.append(message)
+
+            def textCursor(self):
+                return FakeCursor()
+
+            def moveCursor(self, _operation):
+                pass
+
+        status_text = FakeStatusText()
+        window = SimpleNamespace(status_text=status_text)
+
+        YouTubeDownloaderWindow.set_status(window, "첫 번째 메시지")
+        YouTubeDownloaderWindow.set_status(window, "두 번째 메시지")
+
+        self.assertEqual(
+            status_text.messages,
+            ["첫 번째 메시지", "두 번째 메시지"],
+        )
 
 
 class YouTubeFallbackTests(unittest.TestCase):
