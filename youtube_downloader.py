@@ -474,7 +474,10 @@ class YouTubeDownloaderWindow(QMainWindow):
     def on_paste_link(self):
         """클립보드에서 링크 붙여넣기"""
         clipboard = QApplication.clipboard()
-        self.url_edit.setText(clipboard.text())
+        text = clipboard.text().strip()
+        if text:
+            self.url_edit.setText(text)
+            self.url_edit.setFocus()
 
     def on_download(self):
         """다운로드 시작"""
@@ -567,7 +570,7 @@ class YouTubeDownloaderWindow(QMainWindow):
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             child = self.childAt(event.position().toPoint())
-            draggable = {self.title_bar, self.title_label, self.central_widget, self.content_widget}
+            draggable = {self.title_bar, self.title_label}
             if child is None or child in draggable:
                 self._drag_pos = event.globalPosition().toPoint()
         super().mousePressEvent(event)
