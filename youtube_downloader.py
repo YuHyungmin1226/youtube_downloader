@@ -557,9 +557,10 @@ class YouTubeDownloaderWindow(QMainWindow):
 
     def on_open_folder(self):
         """저장 폴더 열기"""
-        folder = str(self.config.get_download_path())
-        if not open_folder(folder):
-            QMessageBox.warning(self, "폴더 열기 실패", f"폴더를 열 수 없습니다: {folder}")
+        folder_path = self.config.get_download_path()
+        folder_path.mkdir(parents=True, exist_ok=True)
+        if not open_folder(str(folder_path)):
+            QMessageBox.warning(self, "폴더 열기 실패", f"폴더를 열 수 없습니다: {folder_path}")
 
     def on_open_settings(self):
         """설정 창 열기"""

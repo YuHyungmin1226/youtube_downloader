@@ -249,7 +249,7 @@ class SettingsDialog(QDialog):
         self.po_token_edit.setEnabled(checked)
         self.visitor_data_edit.setEnabled(checked)
 
-    def on_proxy_mode_changed(self):
+    def on_proxy_mode_changed(self, *args):
         self.proxy_url_edit.setEnabled(self.proxy_mode_combo.currentText() == "수동 설정")
 
     def browse_path(self):
