@@ -56,10 +56,17 @@ STYLE = (
     "QComboBox { background-color: #2d2d2d; color: #eee; border: 1px solid #444; border-radius: 4px; padding: 4px 8px; }"
     "QComboBox:on { border: 1px solid #3578e5; }"
     "QComboBox QAbstractItemView { background-color: #1e1e1e; color: #eee; selection-background-color: #3578e5; border: 1px solid #444; }"
-    "QSpinBox { background-color: #2d2d2d; color: #eee; border: 1px solid #444; border-radius: 4px; padding: 4px; }"
+    "QSpinBox { background-color: #2d2d2d; color: #eee; border: 1px solid #444; border-radius: 4px; padding: 4px; padding-right: 18px; }"
+    "QSpinBox::up-button { subcontrol-origin: border; subcontrol-position: top right; width: 16px; border-left: 1px solid #444; border-bottom: 1px solid #444; background: #202020; border-top-right-radius: 4px; }"
+    "QSpinBox::up-button:hover { background: #3a3a3a; }"
+    "QSpinBox::down-button { subcontrol-origin: border; subcontrol-position: bottom right; width: 16px; border-left: 1px solid #444; background: #202020; border-bottom-right-radius: 4px; }"
+    "QSpinBox::down-button:hover { background: #3a3a3a; }"
+    "QSpinBox::up-arrow { image: none; border-left: 4px solid transparent; border-right: 4px solid transparent; border-bottom: 4px solid #eee; width: 0; height: 0; }"
+    "QSpinBox::down-arrow { image: none; border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 4px solid #eee; width: 0; height: 0; }"
     "QCheckBox { color: #eee; }"
     "QCheckBox::indicator { width: 14px; height: 14px; border: 1px solid #444; background-color: #2d2d2d; border-radius: 2px; }"
     "QCheckBox::indicator:checked { background-color: #3578e5; border-color: #3578e5; }"
+    "QCheckBox::indicator:hover { border: 1px solid #3578e5; }"
     "QGroupBox { border: 1px solid #444; border-radius: 6px; margin-top: 12px; font-weight: bold; color: #eee; padding-top: 12px; }"
     "QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; left: 8px; padding: 0 3px; color: #4a9eff; }"
     "QMessageBox { background-color: #1e1e1e; }"
@@ -69,6 +76,14 @@ STYLE = (
     "QMessageBox QPushButton:hover { background-color: #3a3a3a; }"
     "QMessageBox QPushButton:pressed { background-color: #454545; }"
     "QMessageBox QPushButton:default { border: 2px solid #3578e5; }"
+    "QScrollBar:vertical { background: #121212; width: 12px; margin: 0; }"
+    "QScrollBar::handle:vertical { background: #2d2d2d; min-height: 20px; border-radius: 6px; border: 2px solid #121212; }"
+    "QScrollBar::handle:vertical:hover { background: #3a3a3a; }"
+    "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { background: none; border: none; height: 0; }"
+    "QScrollBar:horizontal { background: #121212; height: 12px; margin: 0; }"
+    "QScrollBar::handle:horizontal { background: #2d2d2d; min-width: 20px; border-radius: 6px; border: 2px solid #121212; }"
+    "QScrollBar::handle:horizontal:hover { background: #3a3a3a; }"
+    "QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { background: none; border: none; width: 0; }"
 )
 
 
@@ -168,7 +183,7 @@ class YouTubeDownloader:
                 user_message = f"\n다운로드 오류 (시도 {attempt + 1}/{self.max_retries}): "
                 format_unavailable = any(
                     message in error_msg
-                    for message in self.YOUTUBE_ANDROID_FALLBACK_ERRORS[1:]
+                    for message in self.YOUTUBE_CLIENT_FALLBACK_ERRORS[1:]
                 )
                 should_retry_client = self._should_retry_with_compatible_client(
                     error_msg,
@@ -249,7 +264,7 @@ class YouTubeDownloader:
             self.selected_quality = f"{height}p{fps_note}"
 
         if d['status'] == 'downloading':
-            percent_str = re.sub(r'\x1b\[[0-9;]*m', '', d.get('_percent_str', '0%'))
+            percent_str = re.sub(r'\x1b\[[0-9;]*m', '', str(d.get('_percent_str', '0%') or '0%'))
             try:
                 percent = float(percent_str.strip('%'))
             except (ValueError, AttributeError):
@@ -261,7 +276,7 @@ class YouTubeDownloader:
                 self.last_percent = percent
 
             if self.status_callback:
-                status = f"{d.get('_percent_str', '')} of {d.get('_total_bytes_str', '')} at {d.get('_speed_str', '')} ETA {d.get('_eta_str', '')}"
+                status = f"{d.get('_percent_str') or ''} of {d.get('_total_bytes_str') or ''} at {d.get('_speed_str') or ''} ETA {d.get('_eta_str') or ''}"
                 self.status_callback(status, replace=True)
         elif d['status'] == 'finished':
             if self.status_callback:
