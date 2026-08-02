@@ -101,6 +101,7 @@ def build_executable():
         f'--add-data=utils.py{data_separator}.',        # 유틸리티 파일 포함
         f'--add-data=ffmpeg_installer.py{data_separator}.',  # FFmpeg 설치 파일 포함
         f'--add-data=settings_dialog.py{data_separator}.',   # 설정 창 포함
+        f'--add-data=icon.png{data_separator}.',        # 런타임 창 아이콘 포함
         '--hidden-import=PySide6.QtCore',
         '--hidden-import=PySide6.QtWidgets',
         '--hidden-import=PySide6.QtGui',
