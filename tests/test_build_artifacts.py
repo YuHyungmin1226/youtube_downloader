@@ -25,7 +25,12 @@ class BuildArtifactTests(unittest.TestCase):
         target = versions / "A"
         target.mkdir(parents=True)
         (target / "Example").write_bytes(b"binary")
-        (versions / "Current").symlink_to("A", target_is_directory=True)
+        try:
+            (versions / "Current").symlink_to("A", target_is_directory=True)
+        except OSError as exc:
+            # Windows requires Developer Mode or admin rights to create symlinks;
+            # this test exercises macOS packaging behavior, not the Windows host.
+            self.skipTest(f"symlink creation not permitted on this host: {exc}")
         return app
 
     def test_copy_to_release_preserves_framework_symlink(self):
