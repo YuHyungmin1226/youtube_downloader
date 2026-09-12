@@ -7,6 +7,7 @@ import re
 import shutil
 import subprocess
 from pathlib import Path
+from urllib.parse import parse_qs, urlencode, urlsplit
 import yt_dlp
 
 def check_ffmpeg_installed(debug=False):
@@ -72,7 +73,7 @@ def check_ffmpeg_installed(debug=False):
             if result.returncode == 0:
                 debug_log(f"FFmpeg 실행 성공: {ffmpeg_path}")
                 return ffmpeg_path
-        except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError) as e:
+        except (subprocess.TimeoutExpired, subprocess.CalledProcessError, OSError) as e:
             debug_log(f"FFmpeg 실행 예외: {e}")
 
     # 5. 환경변수 PATH 직접 탐색
@@ -91,7 +92,7 @@ def check_ffmpeg_installed(debug=False):
                 if result.returncode == 0:
                     debug_log(f"FFmpeg 실행 성공: {candidate}")
                     return str(candidate)
-            except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError) as e:
+            except (subprocess.TimeoutExpired, subprocess.CalledProcessError, OSError) as e:
                 debug_log(f"FFmpeg 실행 예외: {candidate} - {e}")
 
     debug_log("FFmpeg를 찾을 수 없습니다.")
@@ -136,21 +137,45 @@ def supported_domains():
 
 def normalize_youtube_url(url):
     """YouTube URL을 표준 형식으로 정규화"""
-    video_id = None
-    patterns = [
-        r'(?:v=|/)([0-9A-Za-z_-]{11}).*',
-        r'shorts/([0-9A-Za-z_-]{11})',
-        r'embed/([0-9A-Za-z_-]{11})',
-        r'v/([0-9A-Za-z_-]{11})'
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, url)
-        if match:
-            video_id = match.group(1)
-            break
-    if not video_id or len(video_id) != 11:
+    try:
+        parsed = urlsplit(url)
+    except ValueError:
         return None
-    return f"https://www.youtube.com/watch?v={video_id}"
+    query = parse_qs(parsed.query, keep_blank_values=True)
+    path = parsed.path.rstrip('/')
+    video_id = None
+    if parsed.hostname in ('youtu.be', 'www.youtu.be'):
+        video_id = path.removeprefix('/')
+    elif parsed.hostname in ('youtube.com', 'www.youtube.com', 'm.youtube.com', 'music.youtube.com'):
+        if path == '/watch':
+            video_id = query.get('v', [''])[0]
+        elif path == '/playlist':
+            pass
+        else:
+            match = re.fullmatch(r'/(?:shorts|embed|v|live)/([^/]+)', path)
+            if not match:
+                return None
+            video_id = match.group(1)
+    else:
+        return None
+
+    if video_id is not None and not re.fullmatch(r'[0-9A-Za-z_-]{11}', video_id):
+        return None
+    playlist_id = query.get('list', [''])[0]
+    if playlist_id and not re.fullmatch(r'[0-9A-Za-z_-]+', playlist_id):
+        return None
+    if video_id is None and not playlist_id:
+        return None
+    normalized_query = {}
+    if video_id is not None:
+        normalized_query['v'] = video_id
+    if playlist_id:
+        normalized_query['list'] = playlist_id
+        index = query.get('index', [''])[0]
+        if re.fullmatch(r'[0-9]+', index) and index.strip('0'):
+            normalized_query['index'] = index
+    endpoint = 'watch' if video_id is not None else 'playlist'
+    return f"https://www.youtube.com/{endpoint}?{urlencode(normalized_query)}"
 
 
 def validate_url(url):
@@ -160,16 +185,26 @@ def validate_url(url):
 
     url = url.strip()
 
-    if not re.match(r'^https?://', url):
+    if '://' not in url:
         url = 'https://' + url
 
-    for site in supported_domains():
-        if re.match(r'^(https?://)?(www\.)?' + site["domain"] + r'/', url):
-            if site["normalize"]:
-                normalized = normalize_youtube_url(url)
-                if normalized:
-                    return True, normalized
-                return False, "유효하지 않은 영상 ID입니다."
+    try:
+        parsed = urlsplit(url)
+        valid_authority = (
+            parsed.scheme in ('http', 'https')
+            and parsed.username is None
+            and parsed.password is None
+            and parsed.port in (None, 80, 443)
+        )
+    except ValueError:
+        valid_authority = False
+    if valid_authority:
+        if parsed.hostname in ('youtube.com', 'www.youtube.com', 'm.youtube.com', 'music.youtube.com', 'youtu.be', 'www.youtu.be'):
+            normalized = normalize_youtube_url(url)
+            if normalized:
+                return True, normalized
+            return False, "유효하지 않은 영상 또는 재생목록 ID입니다."
+        if parsed.hostname in ('pornhub.com', 'www.pornhub.com') and parsed.path.startswith('/'):
             return True, url
 
     domains = ", ".join(s["name"] for s in supported_domains())

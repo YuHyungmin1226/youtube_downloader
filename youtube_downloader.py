@@ -7,6 +7,33 @@ import threading
 import time
 from pathlib import Path
 
+
+class _NullOutput:
+    """콘솔이 없는 PyInstaller windowed 실행 파일용 출력 스트림"""
+
+    def write(self, text):
+        return len(text)
+
+    def flush(self):
+        return None
+
+    def isatty(self):
+        return False
+
+
+def _ensure_frozen_output_streams():
+    if not getattr(sys, "frozen", False):
+        return
+    for name in ("stdout", "stderr"):
+        stream = getattr(sys, name, None)
+        try:
+            stream.flush()
+        except (AttributeError, OSError):
+            setattr(sys, name, _NullOutput())
+
+
+_ensure_frozen_output_streams()
+
 from PySide6.QtGui import QIcon
 
 try:
@@ -91,7 +118,9 @@ STYLE = (
 class YouTubeDownloader:
     """비디오 다운로더 로직 클래스 (YouTube, Pornhub 등 yt-dlp 지원 사이트)"""
 
-    YOUTUBE_FALLBACK_CLIENT = "android_vr"
+    YOUTUBE_CLIENT_FALLBACK_ORDER = ("tv_embedded", "android_vr", "android")
+    # tv_embedded가 차단되면 PO Token이 필요할 수 있는 android_vr,
+    # 그 다음에 통합 스트림 호환용 android로 순차 재시도한다.
     YOUTUBE_CLIENT_FALLBACK_ERRORS = (
         "http error 403",
         "requested format is not available",
@@ -110,6 +139,9 @@ class YouTubeDownloader:
         self.retry_delay = self.config.get_retry_delay()
         self.is_youtube = False
         self.selected_quality = None
+        self.youtube_high_quality_limited = False
+        self._postprocess_notified = False
+        self._postprocess_stage = None
 
     def validate_url(self):
         """URL 유효성 검증"""
@@ -156,11 +188,15 @@ class YouTubeDownloader:
         ydl_opts = self.config.get_ydl_opts(is_youtube=self.is_youtube)
         ydl_opts.update({
             'progress_hooks': [self.my_hook],
+            'postprocessor_hooks': [self.postprocessor_hook],
             'ffmpeg_location': ffmpeg_path,
         })
 
         for attempt in range(self.max_retries):
             try:
+                self._postprocess_notified = False
+                self._postprocess_stage = None
+                self.last_percent = 0.0
                 if self.status_callback:
                     self.status_callback(f"다운로드를 시작합니다... (시도 {attempt + 1}/{self.max_retries})")
 
@@ -174,6 +210,11 @@ class YouTubeDownloader:
                         else ""
                     )
                     self.status_callback(f"\n성공적으로 다운로드되었습니다.{quality_note}")
+                    if self.youtube_high_quality_limited:
+                        self.status_callback(
+                            "YouTube가 PO Token 없이 고화질 스트림을 차단해 호환 포맷으로 완료했습니다. "
+                            "고화질이 필요하면 설정에 유효한 PO Token을 입력해 주세요."
+                        )
                 if self.progress_callback:
                     self.progress_callback(100)
                 return True
@@ -210,7 +251,14 @@ class YouTubeDownloader:
                     user_message += "지역 제한으로 인해 다운로드할 수 없습니다."
                 elif "http error 403" in error_msg or "http error 401" in error_msg:
                     if should_retry_client:
-                        user_message += "YouTube 파일 접근이 차단되었습니다. YouTube 호환 모드로 전환해 재시도합니다."
+                        current_client = Config.get_youtube_player_client(ydl_opts)
+                        if current_client in {"android_vr", "android"} and not self._has_po_token():
+                            user_message += (
+                                "YouTube 고화질 스트림이 PO Token 검증에서 차단되었습니다. "
+                                "통합 호환 포맷으로 전환해 재시도합니다."
+                            )
+                        else:
+                            user_message += "YouTube 파일 접근이 차단되었습니다. YouTube 호환 모드로 전환해 재시도합니다."
                     else:
                         user_message += "접근 권한이 없습니다. 설정에서 쿠키 또는 권장 요청 프로필을 사용해보세요."
                 else:
@@ -220,10 +268,15 @@ class YouTubeDownloader:
                     self.status_callback(user_message)
 
                 if should_retry_client:
-                    Config.set_youtube_player_client(
-                        ydl_opts,
-                        self.YOUTUBE_FALLBACK_CLIENT,
-                    )
+                    fallback_client = self._get_next_youtube_client(ydl_opts)
+                    if fallback_client:
+                        if (
+                            self.is_youtube
+                            and fallback_client == "android"
+                            and not self._has_po_token()
+                        ):
+                            self.youtube_high_quality_limited = True
+                        Config.set_youtube_player_client(ydl_opts, fallback_client)
 
                 if attempt < self.max_retries - 1:
                     if self.status_callback:
@@ -241,18 +294,36 @@ class YouTubeDownloader:
 
         return False
 
+    def _has_po_token(self):
+        """현재 설정에 실제로 사용할 PO Token이 있는지 반환합니다."""
+        return bool(
+            self.config.get("use_po_token", False)
+            and str(self.config.get("po_token", "")).strip()
+        )
+
     def _should_retry_with_compatible_client(self, error_msg, ydl_opts, attempt):
         """YouTube 클라이언트 문제일 때 권장 호환 프로필 재시도 여부를 반환합니다."""
-        current_client = Config.get_youtube_player_client(ydl_opts)
         return (
             self.is_youtube
-            and current_client != self.YOUTUBE_FALLBACK_CLIENT
+            and self._get_next_youtube_client(ydl_opts) is not None
             and any(
                 message in error_msg
                 for message in self.YOUTUBE_CLIENT_FALLBACK_ERRORS
             )
             and attempt < self.max_retries - 1
         )
+
+    def _get_next_youtube_client(self, ydl_opts):
+        """현재 YouTube 프로필 다음에 시도할 호환 프로필을 반환합니다."""
+        current_client = Config.get_youtube_player_client(ydl_opts)
+        try:
+            current_index = self.YOUTUBE_CLIENT_FALLBACK_ORDER.index(current_client)
+        except ValueError:
+            current_index = -1
+        next_index = current_index + 1
+        if next_index >= len(self.YOUTUBE_CLIENT_FALLBACK_ORDER):
+            return None
+        return self.YOUTUBE_CLIENT_FALLBACK_ORDER[next_index]
 
     def my_hook(self, d):
         """yt-dlp 진행률 콜백"""
@@ -275,11 +346,51 @@ class YouTubeDownloader:
                     self.progress_callback(percent)
                 self.last_percent = percent
 
-        elif d['status'] == 'finished':
+        elif d['status'] == 'finished' and not getattr(self, '_postprocess_notified', False):
+            self._postprocess_notified = True
             if self.status_callback:
                 self.status_callback("다운로드 완료. 후처리 중...")
-            if self.progress_callback:
-                self.progress_callback(100)
+            # 파일 수신이 끝났을 뿐 FFmpeg 병합/변환은 아직 진행 중이다.
+            # 100%를 미리 표시하면 후처리 중 멈춘 것처럼 보이므로 90%에서 대기한다.
+            if self.progress_callback and self.config.should_show_progress():
+                self.progress_callback(90)
+
+    def postprocessor_hook(self, d):
+        """yt-dlp 후처리(FFmpeg 병합/변환) 상태 콜백"""
+        status = d.get('status')
+        postprocessor = str(d.get('postprocessor') or 'FFmpeg')
+        labels = {
+            'Merger': '영상·음성 병합',
+            'FFmpegExtractAudio': '오디오 변환',
+            'EmbedThumbnail': '썸네일 삽입',
+            'Metadata': '메타데이터 처리',
+            'MoveFilesAfterDownload': '파일 정리',
+        }
+        label = labels.get(postprocessor, postprocessor)
+
+        if status == 'started':
+            self._postprocess_stage = postprocessor
+            if self.status_callback:
+                self.status_callback(f"후처리 중... ({label})")
+            if self.progress_callback and self.config.should_show_progress():
+                self.progress_callback(92)
+        elif status == 'processing':
+            # 일부 후처리기는 세부 진행률을 제공한다. 제공하지 않는 FFmpeg
+            # 병합은 started/finished 상태만 보내므로 두 경우 모두 처리한다.
+            raw_percent = d.get('_percent')
+            try:
+                percent = float(raw_percent)
+            except (TypeError, ValueError):
+                percent = None
+            if percent is not None and self.status_callback:
+                self.status_callback(f"후처리 중... ({label}) {percent:.0f}%")
+            if percent is not None and self.progress_callback and self.config.should_show_progress():
+                self.progress_callback(min(99, 92 + percent * 0.06))
+        elif status == 'finished':
+            if self.status_callback:
+                self.status_callback(f"후처리 단계 완료: {label}")
+            if self.progress_callback and self.config.should_show_progress():
+                self.progress_callback(98)
 
     def inspect_formats(self, player_client=None):
         """다운로드 없이 제공 포맷과 현재 설정의 선택 결과를 반환합니다."""
@@ -588,7 +699,11 @@ class YouTubeDownloaderWindow(QMainWindow):
 def run_headless_download(url, download_path=None):
     """GUI 없이 동일한 다운로드 로직을 실행해 자동화 검증을 지원합니다."""
     def print_status(message):
-        print(message, flush=True)
+        try:
+            print(message, flush=True)
+        except OSError:
+            # --windowed 배포본은 콘솔이 없어 stdout이 닫힌 핸들일 수 있습니다.
+            pass
 
     downloader = YouTubeDownloader(url, status_callback=print_status)
     if download_path:

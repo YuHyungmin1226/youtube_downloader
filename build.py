@@ -141,7 +141,16 @@ def build_executable():
 
     try:
         # 빌드 과정의 상세 출력을 위해 capture_output=False (기본값) 사용
-        result = subprocess.run(cmd, check=True)
+        build_env = os.environ.copy()
+        if SYSTEM_NAME == 'Windows':
+            # Qt가 사용하는 Windows ICU 대신 PATH의 다른 앱용 ICU가 수집되지 않게 합니다.
+            system_root = os.environ.get('SystemRoot', r'C:\Windows')
+            build_env['PATH'] = os.pathsep.join([
+                str(Path(system_root) / 'System32'),
+                system_root,
+                build_env.get('PATH', ''),
+            ])
+        result = subprocess.run(cmd, check=True, env=build_env)
         print("빌드 성공!")
         return True
     except subprocess.CalledProcessError as e:
@@ -279,6 +288,9 @@ def main():
         print("빌드 오류: 최신 yt-dlp는 Python 3.10 이상이 필요합니다.")
         print("Python 3.12 가상환경에서 build.py를 다시 실행해주세요.")
         return
+
+    # 상대 경로 기반 빌드와 정리는 이 프로젝트 안에서만 수행합니다.
+    os.chdir(Path(__file__).resolve().parent)
 
     print("YouTube 다운로더 빌드 프로세스 시작")
     print("=" * 50)

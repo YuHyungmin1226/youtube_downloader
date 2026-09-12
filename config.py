@@ -10,7 +10,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 class Config:
     """설정 관리 클래스"""
-    CURRENT_CONFIG_VERSION = 3
+    CURRENT_CONFIG_VERSION = 4
 
     def __init__(self):
         # Windows에서는 숨김 파일 대신 일반 파일로 저장
@@ -39,7 +39,7 @@ class Config:
             "use_po_token": False,
             "po_token": "",
             "visitor_data": "",
-            "player_client": "android_vr",
+            "player_client": "tv_embedded",
             "subtitle_download": False,
             "subtitle_language": "ko",
             "playlist_download": False,
@@ -58,6 +58,8 @@ class Config:
             if self.config_file.exists():
                 with open(self.config_file, 'r', encoding='utf-8') as f:
                     config = json.load(f)
+                    if not isinstance(config, dict):
+                        raise ValueError("설정 파일은 JSON 객체여야 합니다.")
                     try:
                         config_version = int(config.get("config_version", 1))
                     except (TypeError, ValueError):
@@ -76,13 +78,19 @@ class Config:
                         if config.get("player_client") == "android":
                             config["player_client"] = "android_vr"
 
+                    if config_version < 4:
+                        # android_vr의 고화질 URL이 현재 토큰 검증에 걸리므로,
+                        # 토큰 없이도 고화질을 제공하는 TV 호환 프로필로 전환한다.
+                        if config.get("player_client") == "android_vr":
+                            config["player_client"] = "tv_embedded"
+
                     if config_version < self.CURRENT_CONFIG_VERSION:
                         config["config_version"] = self.CURRENT_CONFIG_VERSION
                         self._config_needs_save = True
                     return config
             else:
                 return self.default_config.copy()
-        except (json.JSONDecodeError, UnicodeDecodeError):
+        except (ValueError, UnicodeDecodeError):
             # 설정 파일이 손상된 경우 백업 후 기본값 사용
             try:
                 if self.config_file.exists():
@@ -161,19 +169,38 @@ class Config:
         is_youtube: True면 YouTube 전용 extractor_args(po_token 등)를 포함"""
         quality_val = self.get_quality()
         preferred = self.get_preferred_quality()
+        player_client = self.get("player_client", "tv_embedded")
+        has_po_token = bool(
+            self.get("use_po_token", False)
+            and str(self.get("po_token", "")).strip()
+        )
 
         if self.is_audio_only():
             if quality_val == "worst":
                 format_str = "worstaudio/worst"
             else:
-                format_str = "bestaudio[ext=m4a]/best[ext=m4a]/best"
+                format_str = "bestaudio[ext=m4a]/bestaudio/best"
         else:
             if quality_val == "worst":
                 format_str = "worstvideo+worstaudio/worst"
             else:
                 # 해상도 제한 파싱 (예: "1080p" -> 1080)
                 height_match = re.search(r'\d+', str(preferred))
-                if height_match:
+                # YouTube can return high-resolution android_vr URLs that are
+                # rejected with HTTP 403 unless a GVS PO Token is supplied.
+                # Without a token, choose the best combined format first so
+                # the initial attempt does not fail and then fall back to 360p.
+                if (
+                    is_youtube
+                    and player_client in {"android_vr", "android"}
+                    and not has_po_token
+                ):
+                    if height_match:
+                        h = height_match.group()
+                        format_str = f"best[height<={h}]/best"
+                    else:
+                        format_str = "best"
+                elif height_match:
                     h = height_match.group()
                     format_str = (
                         f"bestvideo*[height<={h}]+bestaudio/"
@@ -187,6 +214,9 @@ class Config:
             'outtmpl': str(self.get_download_path() / "%(title)s.%(ext)s"),
             'noplaylist': not self.get("playlist_download", False),
             'quiet': True,
+            # GUI/--windowed 배포본에는 유효한 콘솔 핸들이 없으므로 yt-dlp의
+            # 진행률 출력이 stdout.flush()에서 OSError를 내지 않게 합니다.
+            'noprogress': True,
             'merge_output_format': self.get_video_format(),
             'retries': self.get_max_retries(),
             'fragment_retries': self.get_max_retries(),
@@ -194,6 +224,11 @@ class Config:
         }
         if not self.is_audio_only() and quality_val != "worst":
             opts['format_sort'] = ['res', 'fps', 'hdr:12', 'br']
+        if self.is_audio_only():
+            opts['postprocessors'] = [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'best',
+            }]
 
         # 자막 다운로드 설정
         if self.get("subtitle_download", False):
@@ -215,7 +250,17 @@ class Config:
                 youtube_args['player_client'] = [self.get("player_client")]
             if self.get("use_po_token", False):
                 if self.get("po_token"):
-                    youtube_args['po_token'] = [self.get("po_token")]
+                    # yt-dlp 2026.8+ requires the token context (for example
+                    # android_vr.gvs) so the token is applied to the right
+                    # Google Video Server request.
+                    player_client = self.get("player_client", "tv_embedded")
+                    raw_token = str(self.get("po_token")).strip()
+                    token_value = (
+                        raw_token
+                        if "." in raw_token.split("+", 1)[0]
+                        else f"{player_client}.gvs+{raw_token}"
+                    )
+                    youtube_args['po_token'] = [token_value]
                 if self.get("visitor_data"):
                     youtube_args['visitor_data'] = [self.get("visitor_data")]
             if youtube_args:
@@ -223,7 +268,9 @@ class Config:
 
         # 프록시 설정
         proxy_url = self.get_proxy()
-        if proxy_url:
+        if self.get("proxy_mode", "auto") == "none":
+            opts['proxy'] = ''
+        elif proxy_url:
             opts['proxy'] = proxy_url
 
         # 재생목록 제한

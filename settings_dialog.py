@@ -170,7 +170,7 @@ class SettingsDialog(QDialog):
         form_po.addRow("PO Token 사용:", self.po_token_check)
         
         self.po_token_edit = QLineEdit(self.config.get("po_token", ""))
-        self.po_token_edit.setPlaceholderText("Visitor ID에 종속된 PO Token 입력")
+        self.po_token_edit.setPlaceholderText("예: android_vr.gvs+토큰값 (영상별/기간 제한)")
         form_po.addRow("PO Token:", self.po_token_edit)
         
         self.visitor_data_edit = QLineEdit(self.config.get("visitor_data", ""))
@@ -179,14 +179,15 @@ class SettingsDialog(QDialog):
         
         self.player_client_combo = QComboBox()
         for label, value in (
-            ("Android VR 호환 프로필 (권장)", "android_vr"),
-            ("Android 기본 프로필 (저화질 호환)", "android"),
+            ("TV Embedded 프로필 (고화질 우선)", "tv_embedded"),
+            ("Android VR 호환 프로필 (PO Token 사용 시 고화질)", "android_vr"),
+            ("Android 기본 프로필 (토큰 없이 안정 다운로드)", "android"),
             ("웹 브라우저 프로필", "web"),
             ("모바일 웹 프로필", "mweb"),
             ("iOS 호환 프로필", "ios"),
         ):
             self.player_client_combo.addItem(label, value)
-        selected_client = self.config.get("player_client", "android_vr")
+        selected_client = self.config.get("player_client", "tv_embedded")
         selected_index = self.player_client_combo.findData(selected_client)
         self.player_client_combo.setCurrentIndex(max(selected_index, 0))
         form_po.addRow("YouTube 요청 프로필:", self.player_client_combo)

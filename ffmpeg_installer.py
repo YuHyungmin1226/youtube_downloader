@@ -102,13 +102,14 @@ class FFmpegInstaller:
     def extract_archive(self, archive_path, extract_path):
         """압축 파일 해제"""
         try:
-            suffixes = ''.join(archive_path.suffixes)
-            if archive_path.suffix == '.zip':
+            if zipfile.is_zipfile(archive_path):
                 with zipfile.ZipFile(archive_path, 'r') as zip_ref:
                     self._safe_extract_zip(zip_ref, extract_path)
-            elif suffixes.endswith(('.tar.xz', '.tar.gz')):
+            elif tarfile.is_tarfile(archive_path):
                 with tarfile.open(archive_path, 'r:*') as tar_ref:
                     self._safe_extract_tar(tar_ref, extract_path)
+            else:
+                raise tarfile.TarError("지원하지 않거나 손상된 압축 파일입니다.")
             return True
         except (zipfile.BadZipFile, tarfile.TarError, IOError) as e:
             if self.status_callback:
@@ -134,10 +135,15 @@ class FFmpegInstaller:
 
     def _safe_extract_tar(self, tar_ref, extract_path):
         for member in tar_ref.getmembers():
+            if not (member.isfile() or member.isdir()):
+                raise tarfile.TarError(f"안전하지 않은 TAR 항목: {member.name}")
             target = Path(extract_path) / member.name
             if not self._is_within_directory(extract_path, target):
                 raise tarfile.TarError(f"안전하지 않은 TAR 경로: {member.name}")
-        tar_ref.extractall(extract_path)
+        if hasattr(tarfile, 'data_filter'):
+            tar_ref.extractall(extract_path, filter='data')
+        else:
+            tar_ref.extractall(extract_path)
 
     def find_ffmpeg_binary(self, extract_path):
         """압축 해제된 폴더에서 ffmpeg 실행 파일 찾기"""

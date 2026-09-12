@@ -19,6 +19,29 @@ class BuildArtifactTests(unittest.TestCase):
         os.chdir(self.previous_cwd)
         self.temp_dir.cleanup()
 
+    def test_main_uses_project_directory_before_cleaning(self):
+        unrelated_build = Path("build")
+        unrelated_build.mkdir()
+        marker = unrelated_build / "keep.txt"
+        marker.write_text("user data", encoding="utf-8")
+        original_marker = marker.resolve()
+        clean_directories = []
+        with patch.object(build, "clean_build_dirs", side_effect=lambda: clean_directories.append(Path.cwd())), patch.object(
+            build, "build_executable", return_value=False
+        ):
+            self.assertFalse(build.main())
+        self.assertEqual(clean_directories, [Path(build.__file__).resolve().parent])
+        self.assertEqual(original_marker.read_text(encoding="utf-8"), "user data")
+
+    def test_windows_build_prefers_system_dlls_without_changing_parent_environment(self):
+        original_path = os.environ.get('PATH', '')
+        with patch.object(build, 'SYSTEM_NAME', 'Windows'), patch.object(build.subprocess, 'run') as run:
+            self.assertTrue(build.build_executable())
+        child_env = run.call_args.kwargs['env']
+        system_root = os.environ.get('SystemRoot', r'C:\Windows')
+        self.assertEqual(child_env['PATH'].split(os.pathsep)[0], str(Path(system_root) / 'System32'))
+        self.assertEqual(os.environ.get('PATH', ''), original_path)
+
     def create_app_with_symlink(self, parent):
         app = parent / "YouTube_Downloader.app"
         versions = app / "Contents" / "Frameworks" / "Example.framework" / "Versions"

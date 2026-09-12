@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, call, patch
 
 from config import Config
 from youtube_downloader import YouTubeDownloader, YouTubeDownloaderWindow
@@ -27,10 +27,10 @@ class ConfigMigrationTests(unittest.TestCase):
             ):
                 config = Config()
 
-            self.assertEqual(config.get("player_client"), "android_vr")
+            self.assertEqual(config.get("player_client"), "tv_embedded")
             saved = json.loads(config_file.read_text(encoding="utf-8"))
             self.assertEqual(saved["config_version"], Config.CURRENT_CONFIG_VERSION)
-            self.assertEqual(saved["player_client"], "android_vr")
+            self.assertEqual(saved["player_client"], "tv_embedded")
 
     def test_version_two_android_client_is_migrated_to_recommended_client(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -50,7 +50,7 @@ class ConfigMigrationTests(unittest.TestCase):
             ):
                 config = Config()
 
-            self.assertEqual(config.get("player_client"), "android_vr")
+            self.assertEqual(config.get("player_client"), "tv_embedded")
 
     def test_current_web_client_selection_is_preserved(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -174,6 +174,45 @@ class ProgressOutputTests(unittest.TestCase):
         self.assertEqual(progress_updates, [42.0])
         self.assertEqual(status_messages, [])
 
+    def test_postprocess_status_is_reported_once_for_merged_streams(self):
+        downloader = YouTubeDownloader.__new__(YouTubeDownloader)
+        downloader.config = Mock()
+        downloader.should_show_progress = True
+        downloader.progress_callback = None
+        downloader.status_callback = Mock()
+        downloader._postprocess_notified = False
+
+        for _ in range(2):
+            downloader.my_hook({"status": "finished", "info_dict": {}})
+
+        downloader.status_callback.assert_called_once_with("다운로드 완료. 후처리 중...")
+
+    def test_postprocessor_hook_reports_ffmpeg_stage(self):
+        downloader = YouTubeDownloader.__new__(YouTubeDownloader)
+        downloader.config = Mock()
+        downloader.config.should_show_progress.return_value = True
+        downloader.status_callback = Mock()
+        downloader.progress_callback = Mock()
+        downloader._postprocess_stage = None
+
+        downloader.postprocessor_hook({
+            "status": "started",
+            "postprocessor": "Merger",
+        })
+        downloader.postprocessor_hook({
+            "status": "finished",
+            "postprocessor": "Merger",
+        })
+
+        self.assertEqual(
+            [call.args[0] for call in downloader.status_callback.call_args_list],
+            ["후처리 중... (영상·음성 병합)", "후처리 단계 완료: 영상·음성 병합"],
+        )
+        self.assertEqual(
+            [call.args[0] for call in downloader.progress_callback.call_args_list],
+            [92, 98],
+        )
+
     def test_status_messages_are_always_appended(self):
         class FakeCursor:
             class MoveOperation:
@@ -221,7 +260,7 @@ class YouTubeFallbackTests(unittest.TestCase):
 
         self.assertTrue(should_retry)
 
-    def test_recommended_client_is_not_retried_with_itself(self):
+    def test_android_vr_retries_with_android_after_media_403(self):
         opts = {"extractor_args": {"youtube": {"player_client": ["android_vr"]}}}
 
         should_retry = self.downloader._should_retry_with_compatible_client(
@@ -230,7 +269,28 @@ class YouTubeFallbackTests(unittest.TestCase):
             attempt=0,
         )
 
-        self.assertFalse(should_retry)
+        self.assertTrue(should_retry)
+        self.assertEqual(self.downloader._get_next_youtube_client(opts), "android")
+
+    def test_tv_embedded_falls_back_to_android_vr(self):
+        opts = {"extractor_args": {"youtube": {"player_client": ["tv_embedded"]}}}
+
+        self.assertEqual(self.downloader._get_next_youtube_client(opts), "android_vr")
+
+    def test_android_is_last_fallback_client(self):
+        opts = {"extractor_args": {"youtube": {"player_client": ["android"]}}}
+
+        self.assertFalse(self.downloader._should_retry_with_compatible_client(
+            "http error 403", opts, attempt=0,
+        ))
+        self.assertIsNone(self.downloader._get_next_youtube_client(opts))
+
+    def test_fallback_sequence_reaches_android_for_web_profile(self):
+        opts = {"extractor_args": {"youtube": {"player_client": ["web"]}}}
+
+        self.assertEqual(self.downloader._get_next_youtube_client(opts), "tv_embedded")
+        Config.set_youtube_player_client(opts, "android_vr")
+        self.assertEqual(self.downloader._get_next_youtube_client(opts), "android")
 
     def test_private_video_error_does_not_trigger_client_fallback(self):
         opts = {"extractor_args": {"youtube": {"player_client": ["web"]}}}
