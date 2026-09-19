@@ -1,235 +1,45 @@
-# YouTube 영상 다운로드 도구 v2.1.0
+# YouTube 최고화질 다운로더 (YouTube Best Quality Downloader)
 
-PySide6를 사용한 GUI 기반 YouTube 영상 다운로드 애플리케이션입니다.
-
-## 📦 최신 빌드 (2026.09.12)
-
-### 🚀 바로 다운로드
-- **Windows 실행 파일**: `release/YouTube_Downloader_vYYYY.MM.DD_Windows.zip`
-- **macOS 앱**: `release/YouTube_Downloader_vYYYY.MM.DD_macOS.zip`
-- **소스 코드**: 이 저장소를 클론하여 실행
-
-### ✅ 최신 수정사항
-- **사이트 호환성 개선**: Python 3.12, 최신 yt-dlp, 브라우저 요청 모방 지원
-- **PO Token 자동 발급 (로그인 불필요)**: 유튜브가 요구하는 PO Token을 로컬에 내장된 서버가 자동으로 생성해줍니다. 로그인이나 쿠키 없이도 대부분 영상을 최고 화질로 받을 수 있습니다.
-- **YouTube 미디어 403 자동 복구**: 그래도 특정 요청이 차단되면 호환 프로필로 자동 재시도
-- **HTTPS 필터 호환성 개선**: Windows/macOS 시스템 인증서 저장소 사용
-- **최고 화질 선택 개선**: 선호 해상도까지의 영상·음성 스트림을 선택하고 FFmpeg로 MP4에 병합
-- **macOS 빌드 지원**: PyInstaller 데이터 경로와 `.app` 산출물 처리를 OS별로 분리
-- **macOS FFmpeg 설치 개선**: Intel/Apple Silicon용 FFmpeg 다운로드 및 탐색 경로 지원
-- **PySide6 호환성 개선**: 모든 Qt 상수를 PySide6에 맞게 수정
-- **Deprecated 메서드 수정**: `exec_()` → `exec()` 변경
-- **예외 처리 강화**: 구체적인 예외 타입 지정
-- **라이브러리 충돌 해결**: PyQt5/PySide6 혼재 문제 완전 해결
-- **빌드 시스템 개선**: 자동화된 빌드 스크립트 추가
-
-### 🔧 설치 없이 바로 실행
-1. 위 ZIP 파일을 다운로드
-2. 압축 해제
-3. Windows는 `YouTube_Downloader.exe`, macOS는 `YouTube_Downloader.app` 실행
-4. Python 설치 불필요!
-
-## 🚀 주요 기능
-
-- **간편한 GUI**: 직관적인 사용자 인터페이스
-- **자동 FFmpeg 설치**: FFmpeg가 없어도 자동으로 설치
-- **실시간 진행률**: 다운로드 진행 상황을 실시간으로 표시
-- **후처리 상태 표시**: 다운로드 후 영상·음성 병합과 FFmpeg 처리 단계를 표시
-- **크로스 플랫폼**: Windows, macOS, Linux 지원
-- **고품질 다운로드**: 최고 품질의 MP4 형식으로 다운로드
-- **설정 시스템**: 다운로드 경로, 품질, 형식 등 사용자 정의 가능
-- **오디오만 다운로드**: 음성 파일만 추출 가능
-- **자막 다운로드**: 한국어 자막 자동 다운로드
-- **재시도 메커니즘**: 네트워크 오류 시 자동 재시도
-- **성능 최적화**: 메모리 사용량 및 진행률 업데이트 최적화
-- **재생목록 지원**: YouTube 재생목록 다운로드
-- **쿠키 지원**: 로그인이 필요한 영상 다운로드
-
-## 📋 시스템 요구사항
-
-- **Windows**: Windows 10/11 (64비트)
-- **macOS**: Intel 또는 Apple Silicon Mac
-- **Python 버전**: Python 3.10 이상 (Python 3.12 권장) - 소스 실행 및 빌드 시에만 필요
-- **인터넷 연결**: 필수
-- **관리자 권한**: FFmpeg 설치 시에만 필요
-- **최소 디스크 공간**: 1GB 여유 공간
-
-## 🔧 설치 방법
-
-### 방법 1: 실행 파일 사용 (권장)
-1. `release` 폴더에서 운영체제에 맞는 ZIP 다운로드
-2. ZIP 파일 압축 해제
-3. Windows는 `YouTube_Downloader.exe`, macOS는 `YouTube_Downloader.app` 실행
-4. **Python 설치 불필요!**
-
-### 방법 2: 소스 코드에서 실행
-```bash
-# 1. 저장소 클론
-git clone <repository-url>
-cd youtube_downloader
-
-# 2. 가상환경 생성 (권장)
-python -m venv venv
-
-# Windows
-venv\Scripts\activate
-
-# macOS/Linux
-source venv/bin/activate
-
-# 3. 의존성 설치
-pip install -r requirements.txt
-
-# 4. (최초 1회, 빌드 시에만 필요) PO Token 서버 준비
-# git, Node.js(>=22)가 설치되어 있어야 합니다. 소스로 바로 실행할 때는
-# 생략 가능하며, 이 경우 PO Token 자동 발급 기능만 비활성화됩니다.
-python setup_pot_provider.py
-
-# 5. 애플리케이션 실행
-python youtube_downloader.py
-```
-
-## 📖 사용 방법
-
-### 기본 사용법
-1. **YouTube 링크 입력**: YouTube 영상 URL을 입력창에 붙여넣기
-2. **FFmpeg 설치** (필요시): FFmpeg 설치 버튼 클릭
-3. **설정 조정** (선택사항): 설정 버튼을 눌러 다운로드 옵션 조정
-4. **다운로드 시작**: "영상 다운로드" 버튼 클릭
-5. **완료**: 다운로드된 영상은 설정된 폴더에 저장
-
-### 고급 기능
-- **재생목록 다운로드**: 재생목록 URL 입력 시 설정에서 활성화
-- **채널 동영상 탭 다운로드**: `.../@채널명/videos`, `.../channel/UC.../videos`, `.../c/이름/videos`, `.../user/이름/videos` 형태의 채널 "동영상" 탭 URL을 입력하면 재생목록과 동일하게 처리되며, 설정의 "재생목록/채널 최대 영상 수"로 다운로드 개수를 제한할 수 있습니다.
-- **자막 다운로드**: 설정에서 자막 다운로드 활성화
-- **쿠키 파일 사용**: 로그인이 필요한 영상의 경우 쿠키 파일 설정
-- **오디오만 다운로드**: M4A 오디오를 우선 선택하며, 없으면 다른 오디오 포맷을 사용합니다. 영상·음성이 합쳐진 파일만 제공되는 경우 FFmpeg로 음성만 추출합니다.
-
-### 테스트
-개발용 가상환경에서 다음 명령으로 네트워크 다운로드 없이 회귀 테스트를 실행할 수 있습니다.
-
-```bash
-python -m pip install pytest
-python -m pytest -q
-```
-
-Windows에서 심볼릭 링크 생성 권한이 없으면 macOS 앱 패키징 관련 테스트 2개는 건너뜁니다.
-
-## ⚙️ 설정 옵션
-
-### 기본 설정
-- **다운로드 경로**: 영상이 저장될 폴더
-- **비디오 형식**: MP4, WebM, MKV 중 선택
-- **화질**: 최고 화질부터 360p, 최저 화질까지 원하는 해상도 선택
-- **오디오만 다운로드**: 음성 파일만 추출
-- **자동 폴더 열기**: 다운로드 완료 후 폴더 자동 열기
-
-### 자막/재생목록
-- **자막 다운로드**: 지정한 언어 코드의 자막 자동 다운로드
-- **재생목록/채널 다운로드**: 재생목록 또는 채널 동영상 탭 URL 입력 시 활성화, 최대 다운로드 개수 지정 가능
-
-## 🛠️ 문제 해결
-
-### FFmpeg 관련 문제
-- FFmpeg 설치 후 PC를 재시작하여 환경변수를 적용하세요
-- 관리자 권한으로 실행해보세요
-- 수동으로 FFmpeg를 설치한 경우 PATH에 추가되었는지 확인하세요
-
-### 다운로드 실패
-- 인터넷 연결을 확인하세요
-- YouTube 링크가 유효한지 확인하세요
-- yt-dlp 라이브러리를 최신 버전으로 업데이트하세요: `pip install --upgrade yt-dlp`
-- 내장된 PO Token 서버가 자동으로 켜지며, 대부분의 경우 로그인 없이도 최고 화질로 다운로드됩니다. 그래도 특정 스트림이 차단되면 자동으로 호환 포맷으로 전환되어 완료됩니다
-
-### 성능 문제
-- 설정에서 진행률 표시를 비활성화해보세요
-- 다운로드 경로를 SSD로 변경해보세요
-- 동시 다운로드 수를 줄여보세요
-- 고해상도 영상은 다운로드 완료 후에도 영상·음성 병합에 시간이 걸릴 수 있습니다. 이때는 상태창에 `후처리 중...` 단계가 표시됩니다.
-
-### GUI 문제
-- PySide6가 제대로 설치되었는지 확인하세요
-- 가상환경을 사용하는 경우 활성화되었는지 확인하세요
-
-## 🔄 업데이트 내역
-
-### v2.1.0 (최신)
-- ✅ yt-dlp 최신 버전 (2026.8.19 이상) 지원
-- ✅ curl_cffi 브라우저 요청 모방 지원
-- ✅ 시스템 인증서 저장소 연동
-- ✅ PySide6 최신 버전 (6.x.x) 지원
-- ✅ requirements.txt 최신화 및 정리
-- ✅ README.md 상세 업데이트
-- ✅ 재생목록 다운로드 기능 개선
-- ✅ 쿠키 파일 지원 강화
-- ✅ 에러 처리 개선
-
-### v2.0.0
-- ✅ 설정 시스템 완전 통합
-- ✅ 코드 중복 제거 및 모듈화
-- ✅ 에러 처리 및 재시도 메커니즘 강화
-- ✅ 성능 최적화 (메모리 사용량, 진행률 업데이트)
-- ✅ 오디오만 다운로드 기능 추가
-- ✅ 자막 다운로드 기능 추가
-- ✅ 설정 UI 추가
-- ✅ 유틸리티 모듈 분리
-
-### v1.0.0
-- 기본 YouTube 다운로드 기능
-- FFmpeg 자동 설치
-- GUI 인터페이스
-
-## 🏗️ 프로젝트 구조
-
-```
-youtube_downloader/
-├── youtube_downloader.py  # 메인 애플리케이션
-├── config.py              # 설정 관리
-├── utils.py               # 유틸리티 함수
-├── ffmpeg_installer.py    # FFmpeg 설치 관리
-├── requirements.txt       # Python 의존성
-├── README.md             # 프로젝트 문서
-└── release/              # 배포 파일
-    ├── YouTube_Downloader.exe 또는 YouTube_Downloader.app
-    ├── YouTube_Downloader_vYYYY.MM.DD_<OS>.zip
-    └── README.md
-```
-
-## 🤝 기여하기
-
-### 버그 리포트
-- GitHub Issues를 통해 버그를 리포트해주세요
-- 가능한 한 상세한 정보를 포함해주세요:
-  - 운영체제 및 버전
-  - Python 버전
-  - 오류 메시지
-  - 재현 단계
-
-### 기능 제안
-- 새로운 기능 아이디어는 GitHub Issues로 제안해주세요
-- 구현 가능성과 우선순위를 고려하여 검토하겠습니다
-
-### 코드 기여
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
-## 📝 라이선스
-
-이 프로젝트는 MIT 라이선스 하에 배포됩니다. 자세한 내용은 [LICENSE](LICENSE) 파일을 참조하세요.
-
-## ⚠️ 면책 조항
-
-이 도구는 교육 및 개인 사용 목적으로만 사용해야 합니다. 저작권이 있는 콘텐츠의 상업적 사용은 법적 문제를 야기할 수 있습니다. 사용자는 관련 법률을 준수할 책임이 있습니다.
-
-## 📞 지원
-
-- **GitHub Issues**: [프로젝트 이슈 페이지](https://github.com/your-username/youtube_downloader/issues)
-- **문서**: 이 README 파일과 코드 내 주석을 참조하세요
-- **커뮤니티**: GitHub Discussions를 통해 다른 사용자들과 소통하세요
+YouTube 영상 링크(URL)를 입력하면 해당 영상이 제공하는 **최고화질(4K UHD, 2K QHD, 1080p60 등)**을 자동으로 분석하여 무손실로 병합 다운로드해주는 깔끔하고 세련된 데스크톱 프로그램입니다.
 
 ---
 
-**Made with ❤️ for the YouTube community** 
+## ✨ 주요 기능
+
+- **🎬 최고화질(4K / 2K / 1080p60) 자동 다운로드**: 해상도 제한 없이 원본 영상이 지원하는 최대 화질 스트림과 최고 음질 오디오를 자동 선택 및 무손실 병합합니다.
+- **🛡️ YouTube 차단 완벽 방지 (HTTP 403 Forbidden 방지)**:
+  - 초경량 포터블 QuickJS 엔진(`qjs.exe`, 2.1MB) 내장 및 `web_embedded` 최적화 클라이언트를 적용하여 YouTube의 최신 JS 챌린지(`n` 파라미터)를 완벽히 해결합니다.
+  - 네트워크 이상이나 일시적 차단 감지 시 `Android` 호환 프로필로 자동 전환되는 스마트 대체(Fallback) 엔진이 탑재되어 있습니다.
+- **🖼️ 실시간 영상 미리보기 카드**: URL을 입력하면 영상 썸네일, 제목, 채널명, 재생 시간 및 **`✨ 지원 최고화질 배지`**를 즉시 표시합니다.
+- **📦 완전 무설치 포터블 (Portable)**: 
+  - `imageio-ffmpeg` 패키지 및 포터블 폴더 자동 감지 지원.
+  - PC에 FFmpeg나 JS 엔진이 없더라도, 관리자 권한 없이 로컬 공간에 자동 준비하여 중단 없이 즉시 다운로드를 완료합니다.
+- **🎵 고음질 MP3 음원 추출**: 원클릭으로 영상뿐만 아니라 최고 음질(320kbps) 오디오 파일만 추출할 수 있습니다.
+- **🎨 깔끔하고 단순한 모던 UI/UX**: 군더더기 없는 다크 테마, 실시간 속도 및 잔여 시간 표시, 완료 후 원클릭 영상 재생/폴더 열기 지원.
+- **접이식 상세 로그**: 복잡한 터미널 로그는 기본적으로 숨겨져 있으며, 필요할 때만 펼쳐서 확인할 수 있습니다.
+
+---
+
+## 🚀 빠른 시작
+
+### 1. 간편 실행 (권장)
+`run.bat` 파일을 더블 클릭하면 자동으로 환경을 확인하고 프로그램을 실행합니다.
+```cmd
+run.bat
+```
+
+### 2. 수동 설치 및 실행
+```bash
+pip install -r requirements.txt
+python youtube_downloader.py
+```
+
+### 3. CLI (터미널) 모드 실행 지원
+GUI 없이 터미널 명령어로 바로 다운로드할 수도 있습니다:
+```bash
+# 최고화질 영상 다운로드
+python youtube_downloader.py --url "https://www.youtube.com/watch?v=..."
+
+# 고음질 MP3 음원만 추출
+python youtube_downloader.py --url "https://www.youtube.com/watch?v=..." --audio-only
+```

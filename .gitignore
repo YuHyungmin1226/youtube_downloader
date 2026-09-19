@@ -187,6 +187,8 @@ release/*.exe
 release/*.zip
 release/*.app/
 *.exe
+!bin/qjs.exe
+*.part
 
 # PO Token 제공 서버 (setup_pot_provider.py로 생성, 용량이 커서 커밋하지 않음)
 pot_provider/
