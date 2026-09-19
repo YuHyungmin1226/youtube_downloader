@@ -115,7 +115,7 @@ class Config:
         p = Path(self.get("download_path", str(Path.home() / "Downloads")))
         return p
 
-    def get_ydl_opts(self, is_youtube=True, audio_only=False, player_client=None):
+    def get_ydl_opts(self, is_youtube=True, audio_only=False, is_playlist=False, player_client=None):
         """최고화질 다운로드를 위한 최적화 yt-dlp 옵션 생성"""
         if audio_only:
             format_str = "bestaudio[ext=m4a]/bestaudio/best"
@@ -123,16 +123,23 @@ class Config:
             # 해상도 제한 없이 항상 최고의 영상 스트림 + 최고 음원 스트림 병합
             format_str = "bestvideo*+bestaudio/bestvideo*/best"
 
+        if is_playlist:
+            # 채널/재생목록은 채널명별 전용 하위 폴더에 체계적으로 저장
+            out_template = str(self.get_download_path() / "%(uploader,channel|Unknown)s" / "%(title)s.%(ext)s")
+        else:
+            out_template = str(self.get_download_path() / "%(title)s.%(ext)s")
+
         opts = {
             "format": format_str,
-            "outtmpl": str(self.get_download_path() / "%(title)s.%(ext)s"),
-            "noplaylist": True,
+            "outtmpl": out_template,
+            "noplaylist": not is_playlist,
+            "nooverwrites": True,  # 이미 다운로드된 영상 중복 다운로드 방지
             "quiet": True,
             "noprogress": True,
             "merge_output_format": "mp4",
             "retries": self.get("max_retries", 3),
             "fragment_retries": self.get("max_retries", 3),
-            "ignoreerrors": False,
+            "ignoreerrors": True if is_playlist else False,  # 채널 내 삭제/비공개 영상 건너뛰기
             "remote_components": {"ejs:github"},
         }
 
@@ -443,22 +450,44 @@ class JsRuntimeHelper:
 # ============================================================================
 # 3. URL 검증 및 시스템 유틸리티
 # ============================================================================
-def validate_url(url):
-    """YouTube 및 영상 URL 검증 및 정규화"""
+def is_playlist_url(url):
+    """채널 또는 재생목록 URL 여부 판별"""
     if not url or not isinstance(url, str):
-        return False, "URL을 입력해주세요."
+        return False
+    try:
+        parsed = urllib.parse.urlsplit(url.strip())
+        netloc = parsed.netloc.lower()
+        path = parsed.path.strip("/")
+        qs = urllib.parse.parse_qs(parsed.query)
+
+        if "youtube.com" in netloc:
+            if path.startswith(("@", "channel/", "c/", "user/")):
+                return True
+            if "list" in qs and qs["list"] and "v" not in qs:
+                return True
+            if path == "playlist":
+                return True
+    except Exception:
+        pass
+    return False
+
+
+def validate_url(url):
+    """YouTube 및 영상 URL 검증 및 정규화 (단일 영상 / 채널 / 재생목록)"""
+    if not url or not isinstance(url, str):
+        return False, "URL을 입력해주세요.", False
 
     clean = url.strip()
     if len(clean) < 10:
-        return False, "유효한 URL을 입력해주세요."
+        return False, "유효한 URL을 입력해주세요.", False
 
     try:
         parsed = urllib.parse.urlsplit(clean)
     except Exception:
-        return False, "URL 형식이 올바르지 않습니다."
+        return False, "URL 형식이 올바르지 않습니다.", False
 
     if not parsed.scheme or parsed.scheme not in ("http", "https") or not parsed.netloc:
-        return False, "http:// 또는 https:// 로 시작하는 올바른 웹 주소를 입력해주세요."
+        return False, "http:// 또는 https:// 로 시작하는 올바른 웹 주소를 입력해주세요.", False
 
     netloc = parsed.netloc.lower()
 
@@ -468,46 +497,60 @@ def validate_url(url):
         if path_parts:
             vid = path_parts[0].split("?")[0]
             if re.match(r'^[a-zA-Z0-9_-]{11}$', vid):
-                return True, f"https://www.youtube.com/watch?v={vid}"
+                return True, f"https://www.youtube.com/watch?v={vid}", False
             elif len(vid) >= 5:
-                return True, clean
-        return False, "유효한 YouTube 영상 ID를 찾을 수 없습니다."
+                return True, clean, False
+        return False, "유효한 YouTube 영상 ID를 찾을 수 없습니다.", False
 
     # 2. youtube.com URL
     if "youtube.com" in netloc:
-        # 2-1. /watch?v=VIDEO_ID
+        path = parsed.path.strip("/")
         qs = urllib.parse.parse_qs(parsed.query)
+
+        # 2-1. 채널 URL: /@채널명, /channel/UC..., /c/..., /user/...
+        if path.startswith(("@", "channel/", "c/", "user/")):
+            # 하위 탭이 지정되지 않은 @채널명의 경우 /videos 탭으로 자동 정규화
+            if path.startswith("@") and "/" not in path:
+                clean = f"https://www.youtube.com/{path}/videos"
+            return True, clean, True
+
+        # 2-2. 순수 재생목록 URL: /playlist?list=...
+        if "list" in qs and qs["list"] and "v" not in qs:
+            return True, clean, True
+
+        # 2-3. /watch?v=VIDEO_ID (단일 영상)
         if "v" in qs and qs["v"]:
             vid = qs["v"][0]
             if re.match(r'^[a-zA-Z0-9_-]{11}$', vid):
-                return True, f"https://www.youtube.com/watch?v={vid}"
+                return True, f"https://www.youtube.com/watch?v={vid}", False
             elif len(vid) >= 5:
-                return True, clean
-            return False, "YouTube 영상 ID가 올바르지 않습니다."
+                return True, clean, False
+            return False, "YouTube 영상 ID가 올바르지 않습니다.", False
 
-        # 2-2. /shorts/VIDEO_ID, /live/VIDEO_ID, /embed/VIDEO_ID
-        path_parts = [p for p in parsed.path.strip("/").split("/") if p]
+        # 2-4. /shorts/VIDEO_ID, /live/VIDEO_ID, /embed/VIDEO_ID
+        path_parts = [p for p in path.split("/") if p]
         if len(path_parts) >= 2 and path_parts[0] in ("shorts", "live", "embed"):
             vid = path_parts[1].split("?")[0]
             if re.match(r'^[a-zA-Z0-9_-]{11}$', vid):
-                return True, f"https://www.youtube.com/watch?v={vid}"
+                return True, f"https://www.youtube.com/watch?v={vid}", False
             elif len(vid) >= 5:
-                return True, clean
-            return False, "YouTube 영상 ID가 올바르지 않습니다."
+                return True, clean, False
+            return False, "YouTube 영상 ID가 올바르지 않습니다.", False
 
-        # 2-3. 기타 채널/재생목록 등
-        if parsed.path.strip("/") or parsed.query:
+        # 2-5. 기타 채널/재생목록 등
+        if path or parsed.query:
             if parsed.query.strip() in ("v=", "v"):
-                return False, "영상 ID가 비어있습니다."
-            return True, clean
+                return False, "영상 ID가 비어있습니다.", False
+            is_pl = is_playlist_url(clean)
+            return True, clean, is_pl
 
-        return False, "유효한 YouTube 링크가 아닙니다."
+        return False, "유효한 YouTube 링크가 아닙니다.", False
 
     # 3. 기타 yt-dlp 지원 사이트 URL (도메인과 경로가 온전한 경우)
     if "." in netloc and len(netloc.split(".")) >= 2 and len(parsed.path) >= 1:
-        return True, clean
+        return True, clean, False
 
-    return False, "유효한 영상 링크 형식이 아닙니다."
+    return False, "유효한 영상 링크 형식이 아닙니다.", False
 
 
 def open_folder(path):
@@ -556,19 +599,23 @@ class VideoInfoWorker(QThread):
 
     def run(self):
         try:
-            is_valid, clean_url = validate_url(self.url)
+            is_valid, clean_url, is_playlist = validate_url(self.url)
             if not is_valid:
                 self.info_failed.emit(clean_url)
                 return
 
             config = Config()
-            ydl_opts = config.get_ydl_opts(is_youtube=True)
+            ydl_opts = config.get_ydl_opts(is_youtube=True, is_playlist=is_playlist)
             ydl_opts.update({
                 "quiet": True,
                 "skip_download": True,
-                "extract_flat": False,
                 "no_warnings": True,
             })
+            if is_playlist:
+                ydl_opts["extract_flat"] = "in_playlist"
+                ydl_opts["playlist_items"] = "1:20"
+            else:
+                ydl_opts["extract_flat"] = False
 
             ffmpeg_path = FFmpegHelper.check_ffmpeg()
             if ffmpeg_path:
@@ -578,53 +625,74 @@ class VideoInfoWorker(QThread):
                 info = ydl.extract_info(clean_url, download=False)
 
             if not info:
-                self.info_failed.emit("영상 정보를 가져올 수 없습니다.")
+                self.info_failed.emit("영상/채널 정보를 가져올 수 없습니다.")
                 return
 
-            title = info.get("title") or "제목 없음"
-            uploader = info.get("uploader") or info.get("channel") or "알 수 없는 채널"
-            duration = info.get("duration")
+            if is_playlist:
+                title = info.get("title") or "채널 동영상 목록"
+                uploader = info.get("uploader") or info.get("channel") or "YouTube 채널"
+                entries = list(info.get("entries") or [])
+                count = info.get("playlist_count") or len(entries)
+                dur_str = f"동영상 일괄 순차 다운로드 ({count}개 이상)" if count else "동영상 일괄 순차 다운로드"
+                res_badge = "📺 채널 전체 순차 다운로드" if any(k in clean_url for k in ["@", "channel", "/c/", "/user/"]) else "📋 재생목록 순차 다운로드"
+                max_height = 1080
 
-            if duration:
-                mins, secs = divmod(int(duration), 60)
-                hours, mins = divmod(mins, 60)
-                dur_str = f"{hours}:{mins:02d}:{secs:02d}" if hours > 0 else f"{mins:02d}:{secs:02d}"
+                # 썸네일: 채널 썸네일 또는 첫 번째 영상 썸네일
+                thumb_url = info.get("thumbnail")
+                if not thumb_url and info.get("thumbnails"):
+                    thumb_url = info.get("thumbnails")[-1].get("url")
+                if not thumb_url and entries:
+                    e_thumbs = entries[0].get("thumbnails") or []
+                    if e_thumbs:
+                        thumb_url = e_thumbs[-1].get("url")
+                    else:
+                        thumb_url = entries[0].get("thumbnail")
             else:
-                dur_str = "실시간 스트리밍" if info.get("is_live") else "알 수 없음"
+                title = info.get("title") or "제목 없음"
+                uploader = info.get("uploader") or info.get("channel") or "알 수 없는 채널"
+                duration = info.get("duration")
 
-            # 지원 최고 해상도 및 프레임 레이트 감지
-            formats = info.get("formats") or []
-            video_formats = [
-                f for f in formats
-                if f.get("vcodec") != "none" and f.get("height")
-            ]
-            max_height = 0
-            max_fps = 30
-            for f in video_formats:
-                h = int(f.get("height") or 0)
-                fps = int(f.get("fps") or 0)
-                if h > max_height:
-                    max_height = h
-                    max_fps = fps
-                elif h == max_height and fps > max_fps:
-                    max_fps = fps
+                if duration:
+                    mins, secs = divmod(int(duration), 60)
+                    hours, mins = divmod(mins, 60)
+                    dur_str = f"{hours}:{mins:02d}:{secs:02d}" if hours > 0 else f"{mins:02d}:{secs:02d}"
+                else:
+                    dur_str = "실시간 스트리밍" if info.get("is_live") else "알 수 없음"
 
-            fps_str = f" {max_fps}fps" if max_fps > 30 else ""
-            if max_height >= 4320:
-                res_badge = f"8K UHD ({max_height}p{fps_str})"
-            elif max_height >= 2160:
-                res_badge = f"4K UHD ({max_height}p{fps_str})"
-            elif max_height >= 1440:
-                res_badge = f"2K QHD ({max_height}p{fps_str})"
-            elif max_height >= 1080:
-                res_badge = f"1080p FHD ({max_height}p{fps_str})"
-            elif max_height > 0:
-                res_badge = f"{max_height}p HD"
-            else:
-                res_badge = "최고화질 지원"
+                # 지원 최고 해상도 및 프레임 레이트 감지
+                formats = info.get("formats") or []
+                video_formats = [
+                    f for f in formats
+                    if f.get("vcodec") != "none" and f.get("height")
+                ]
+                max_height = 0
+                max_fps = 30
+                for f in video_formats:
+                    h = int(f.get("height") or 0)
+                    fps = int(f.get("fps") or 0)
+                    if h > max_height:
+                        max_height = h
+                        max_fps = fps
+                    elif h == max_height and fps > max_fps:
+                        max_fps = fps
+
+                fps_str = f" {max_fps}fps" if max_fps > 30 else ""
+                if max_height >= 4320:
+                    res_badge = f"8K UHD ({max_height}p{fps_str})"
+                elif max_height >= 2160:
+                    res_badge = f"4K UHD ({max_height}p{fps_str})"
+                elif max_height >= 1440:
+                    res_badge = f"2K QHD ({max_height}p{fps_str})"
+                elif max_height >= 1080:
+                    res_badge = f"1080p FHD ({max_height}p{fps_str})"
+                elif max_height > 0:
+                    res_badge = f"{max_height}p HD"
+                else:
+                    res_badge = "최고화질 지원"
+
+                thumb_url = info.get("thumbnail")
 
             # 썸네일 이미지 다운로드
-            thumb_url = info.get("thumbnail")
             thumb_data = None
             if thumb_url:
                 try:
@@ -639,6 +707,7 @@ class VideoInfoWorker(QThread):
 
             result = {
                 "url": clean_url,
+                "is_playlist": is_playlist,
                 "title": title,
                 "uploader": uploader,
                 "duration": dur_str,
@@ -665,6 +734,11 @@ class YouTubeDownloader:
         self.detailed_callback = detailed_callback
         self.last_percent = 0.0
         self.downloaded_file = None
+        self._is_cancelled = False
+
+    def cancel(self):
+        """다운로드 중단 요청"""
+        self._is_cancelled = True
 
     def get_ffmpeg_path(self):
         """포터블 FFmpeg 경로 자동 탐색 또는 자동 다운로드"""
@@ -692,7 +766,8 @@ class YouTubeDownloader:
 
     def download(self, audio_only=False):
         """최고화질 다운로드 실행 및 403 오류 시 자동 복구/대체 다운로드"""
-        is_valid, clean_url = validate_url(self.url)
+        self._is_cancelled = False
+        is_valid, clean_url, is_playlist = validate_url(self.url)
         if not is_valid:
             if self.status_callback:
                 self.status_callback(f"오류: {clean_url}")
@@ -716,7 +791,12 @@ class YouTubeDownloader:
             return False
 
         # 1차 시도: 최고화질 web_embedded + android
-        ydl_opts = self.config.get_ydl_opts(is_youtube=True, audio_only=audio_only, player_client=["web_embedded", "android"])
+        ydl_opts = self.config.get_ydl_opts(
+            is_youtube=True,
+            audio_only=audio_only,
+            is_playlist=is_playlist,
+            player_client=["web_embedded", "android"]
+        )
         ydl_opts.update({
             "progress_hooks": [self._progress_hook],
             "postprocessor_hooks": [self._postprocessor_hook],
@@ -732,19 +812,39 @@ class YouTubeDownloader:
                 ydl_opts["js_runtimes"] = {"node": {"path": js_path}}
 
         if self.status_callback:
-            mode_desc = "고음질 오디오(MP3)" if audio_only else "지원 최고화질 영상(MP4)"
+            if is_playlist:
+                mode_desc = "채널/재생목록 고음질 오디오(MP3) 일괄" if audio_only else "채널/재생목록 최고화질 영상(MP4) 일괄"
+            else:
+                mode_desc = "고음질 오디오(MP3)" if audio_only else "지원 최고화질 영상(MP4)"
             self.status_callback(f"{mode_desc} 다운로드를 시작합니다...")
 
         try:
             with youtube_dl.YoutubeDL(ydl_opts) as ydl:
                 ydl.download([clean_url])
 
+            if self._is_cancelled:
+                if self.status_callback:
+                    self.status_callback("🛑 다운로드가 사용자에 의해 중지되었습니다.")
+                return False
+
             if self.status_callback:
-                self.status_callback("성공적으로 다운로드되었습니다.")
+                if is_playlist:
+                    self.status_callback("채널/재생목록의 모든 동영상이 성공적으로 다운로드되었습니다.")
+                else:
+                    self.status_callback("성공적으로 다운로드되었습니다.")
             if self.progress_callback:
                 self.progress_callback(100)
             return True
+        except youtube_dl.utils.DownloadCancelled:
+            if self.status_callback:
+                self.status_callback("🛑 다운로드가 사용자에 의해 중지되었습니다.")
+            return False
         except Exception as e:
+            if self._is_cancelled or "DownloadCancelled" in type(e).__name__ or "중지" in str(e):
+                if self.status_callback:
+                    self.status_callback("🛑 다운로드가 사용자에 의해 중지되었습니다.")
+                return False
+
             err_msg = str(e)
             # 403 Forbidden 또는 스트림 차단 발생 시 Android 클라이언트 단독 대체 모드로 자동 복구
             if "403" in err_msg or "Forbidden" in err_msg or "unable to download" in err_msg:
@@ -756,12 +856,24 @@ class YouTubeDownloader:
                     fallback_opts["format"] = "best[ext=mp4]/bestvideo*+bestaudio/best"
                     with youtube_dl.YoutubeDL(fallback_opts) as ydl_fb:
                         ydl_fb.download([clean_url])
+                    if self._is_cancelled:
+                        if self.status_callback:
+                            self.status_callback("🛑 다운로드가 사용자에 의해 중지되었습니다.")
+                        return False
                     if self.status_callback:
                         self.status_callback("성공적으로 다운로드되었습니다 (호환 프로필).")
                     if self.progress_callback:
                         self.progress_callback(100)
                     return True
+                except youtube_dl.utils.DownloadCancelled:
+                    if self.status_callback:
+                        self.status_callback("🛑 다운로드가 사용자에 의해 중지되었습니다.")
+                    return False
                 except Exception as fb_err:
+                    if self._is_cancelled or "DownloadCancelled" in type(fb_err).__name__:
+                        if self.status_callback:
+                            self.status_callback("🛑 다운로드가 사용자에 의해 중지되었습니다.")
+                        return False
                     err_msg = str(fb_err)
 
             if self.status_callback:
@@ -769,6 +881,14 @@ class YouTubeDownloader:
             return False
 
     def _progress_hook(self, d):
+        if self._is_cancelled:
+            raise youtube_dl.utils.DownloadCancelled("사용자에 의해 다운로드가 중지되었습니다.")
+
+        info = d.get("info_dict") or {}
+        p_idx = info.get("playlist_index") or d.get("playlist_index")
+        p_count = info.get("n_entries") or info.get("playlist_count") or d.get("playlist_count")
+        p_prefix = f"[{p_idx}/{p_count}] " if p_idx and p_count else (f"[{p_idx}] " if p_idx else "")
+
         if d["status"] == "downloading":
             raw_percent = re.sub(r"\x1b\[[0-9;]*m", "", str(d.get("_percent_str", "0%") or "0%"))
             try:
@@ -783,6 +903,11 @@ class YouTubeDownloader:
             if self.detailed_callback:
                 self.detailed_callback(percent, speed, eta, size)
 
+            if p_prefix and (abs(percent - self.last_percent) >= 10.0 or percent == 100):
+                title = info.get("title") or ""
+                if self.status_callback:
+                    self.status_callback(f"{p_prefix}{title[:30]} 다운로드 중... ({percent:.1f}%)")
+
             if abs(percent - self.last_percent) >= 1.0 or percent == 100:
                 if self.progress_callback:
                     self.progress_callback(percent)
@@ -793,11 +918,17 @@ class YouTubeDownloader:
             if fn:
                 self.downloaded_file = fn
             if self.status_callback:
-                self.status_callback("다운로드 완료. 영상과 오디오를 최고품질로 병합하고 있습니다 (FFmpeg)...")
+                if p_prefix:
+                    self.status_callback(f"{p_prefix}다운로드 완료. 병합 및 다음 항목 처리 중...")
+                else:
+                    self.status_callback("다운로드 완료. 영상과 오디오를 최고품질로 병합하고 있습니다 (FFmpeg)...")
             if self.progress_callback:
                 self.progress_callback(90)
 
     def _postprocessor_hook(self, d):
+        if self._is_cancelled:
+            raise youtube_dl.utils.DownloadCancelled("사용자에 의해 다운로드가 중지되었습니다.")
+
         status = d.get("status")
         if status == "started":
             pp = str(d.get("postprocessor") or "FFmpeg")
@@ -1073,6 +1204,9 @@ class YouTubeDownloaderWindow(QMainWindow):
         self.config = Config()
         self.last_downloaded_file = None
         self.info_worker = None
+        self.is_downloading = False
+        self.current_downloader = None
+        self.is_playlist_mode = False
 
         # 아이콘 설정
         icon_path = Path(__file__).resolve().parent / "icon.png"
@@ -1343,22 +1477,29 @@ class YouTubeDownloaderWindow(QMainWindow):
 
     def on_url_text_changed(self, text):
         clean = text.strip()
-        is_valid, _ = validate_url(clean)
+        is_valid, _, is_playlist = validate_url(clean)
         if is_valid:
+            self.is_playlist_mode = is_playlist
             self.debounce_timer.start()
         else:
             self.debounce_timer.stop()
+            self.is_playlist_mode = False
             self.preview_placeholder.setText("💡 유튜브 링크를 입력하면 영상 썸네일과 지원 최고화질이 자동으로 감지됩니다.")
             self.preview_placeholder.setVisible(True)
             self.preview_content.setVisible(False)
+            self.update_download_button_ui()
 
     def start_fetch_info(self):
         url = self.url_edit.text().strip()
-        is_valid, clean_url = validate_url(url)
+        is_valid, clean_url, is_playlist = validate_url(url)
         if not is_valid:
             return
 
-        self.preview_placeholder.setText("🔍 영상 정보 및 지원 최고화질 분석 중...")
+        self.is_playlist_mode = is_playlist
+        if is_playlist:
+            self.preview_placeholder.setText("🔍 채널/재생목록 동영상 목록을 분석 중입니다 (수초 소요)...")
+        else:
+            self.preview_placeholder.setText("🔍 영상 정보 및 지원 최고화질 분석 중...")
         self.preview_placeholder.setVisible(True)
         self.preview_content.setVisible(False)
 
@@ -1375,9 +1516,18 @@ class YouTubeDownloaderWindow(QMainWindow):
         self.preview_placeholder.setVisible(False)
         self.preview_content.setVisible(True)
 
+        is_pl = data.get("is_playlist", False)
+        self.is_playlist_mode = is_pl
+
         self.video_title_label.setText(data.get("title", "제목 없음"))
-        self.video_meta_label.setText(f"채널: {data.get('uploader')}   |   재생시간: {data.get('duration')}")
-        self.quality_badge.setText(f"✨ 지원 최고화질: {data.get('max_res')}")
+        if is_pl:
+            self.video_meta_label.setText(f"채널: {data.get('uploader')}   |   {data.get('duration')}")
+            self.quality_badge.setText(f"✨ {data.get('max_res')}")
+            self.format_note_label.setText("📁 채널명 폴더를 자동 생성하여 전 동영상을 순차 저장합니다 (중복 건너뛰기).")
+        else:
+            self.video_meta_label.setText(f"채널: {data.get('uploader')}   |   재생시간: {data.get('duration')}")
+            self.quality_badge.setText(f"✨ 지원 최고화질: {data.get('max_res')}")
+            self.format_note_label.setText("🎬 최고화질 영상 + 무손실 음원 자동 병합 (MP4)")
 
         thumb_data = data.get("thumbnail_data")
         if thumb_data:
@@ -1389,23 +1539,61 @@ class YouTubeDownloaderWindow(QMainWindow):
         else:
             self.thumb_label.setText("썸네일 없음")
 
-        if self.audio_radio.isChecked():
-            self.download_btn.setText("⬇ 고음질 음원 추출 시작 (MP3)")
-        else:
-            self.download_btn.setText(f"⬇ 최고화질 영상 다운로드 ({data.get('max_res')})")
+        self.update_download_button_ui()
 
     def on_info_failed(self, msg):
         self.preview_placeholder.setText(f"⚠️ {msg}")
         self.preview_placeholder.setVisible(True)
         self.preview_content.setVisible(False)
 
+    def update_download_button_ui(self):
+        """다운로드/중지 버튼 텍스트 및 스타일 동적 갱신"""
+        if self.is_downloading:
+            self.download_btn.setEnabled(True)
+            self.download_btn.setText("🛑 다운로드 중지")
+            self.download_btn.setStyleSheet("""
+                QPushButton {
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #dc2626, stop:1 #b91c1c);
+                    color: #ffffff;
+                    font-weight: bold;
+                    font-size: 14px;
+                    border: none;
+                    border-radius: 8px;
+                    padding: 8px 16px;
+                }
+                QPushButton:hover {
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #ef4444, stop:1 #dc2626);
+                }
+                QPushButton:pressed {
+                    background: #991b1b;
+                }
+            """)
+        else:
+            self.download_btn.setEnabled(True)
+            self.download_btn.setStyleSheet("")
+            if self.is_playlist_mode:
+                if self.audio_radio.isChecked():
+                    self.download_btn.setText("⬇ 채널 전체 음원(MP3) 순차 다운로드 시작")
+                else:
+                    self.download_btn.setText("⬇ 채널 전체 동영상(MP4) 순차 다운로드 시작")
+            else:
+                if self.audio_radio.isChecked():
+                    self.download_btn.setText("⬇ 고음질 음원 추출 시작 (MP3)")
+                else:
+                    self.download_btn.setText("⬇ 지원 최고화질로 다운로드 시작")
+
     def on_format_changed(self):
         if self.audio_radio.isChecked():
-            self.download_btn.setText("⬇ 고음질 음원 추출 시작 (MP3)")
-            self.format_note_label.setText("🎵 고음질 오디오 무손실 추출 (MP3/320k)")
+            if self.is_playlist_mode:
+                self.format_note_label.setText("🎵 채널 전체 동영상을 고음질 MP3로 순차 추출합니다.")
+            else:
+                self.format_note_label.setText("🎵 고음질 오디오 무손실 추출 (MP3/320k)")
         else:
-            self.download_btn.setText("⬇ 지원 최고화질로 다운로드 시작")
-            self.format_note_label.setText("🎬 최고화질 영상 + 무손실 음원 자동 병합 (MP4)")
+            if self.is_playlist_mode:
+                self.format_note_label.setText("📁 채널명 폴더를 자동 생성하여 전 동영상을 순차 저장합니다 (중복 건너뛰기).")
+            else:
+                self.format_note_label.setText("🎬 최고화질 영상 + 무손실 음원 자동 병합 (MP4)")
+        self.update_download_button_ui()
 
     def on_change_folder(self):
         cur = str(self.config.get_download_path())
@@ -1432,12 +1620,9 @@ class YouTubeDownloaderWindow(QMainWindow):
         self.status_text.setVisible(not vis)
         self.toggle_log_btn.setText("▲ 상세 로그 닫기" if not vis else "▼ 상세 로그 보기")
 
-    def on_download_btn_state(self, enabled):
-        self.download_btn.setEnabled(enabled)
-        if enabled:
-            self.on_format_changed()
-        else:
-            self.download_btn.setText("⏳ 다운로드 진행 중...")
+    def on_download_btn_state(self, is_idle):
+        self.is_downloading = not is_idle
+        self.update_download_button_ui()
 
     def set_status(self, msg):
         try:
@@ -1472,7 +1657,10 @@ class YouTubeDownloaderWindow(QMainWindow):
     def on_download_completed(self, filepath):
         self.last_downloaded_file = filepath
         self.complete_card.setVisible(True)
-        self.progress_status_label.setText("✅ 다운로드가 성공적으로 완료되었습니다!")
+        if self.is_playlist_mode:
+            self.progress_status_label.setText("✅ 채널/재생목록 동영상 순차 다운로드가 완료되었습니다!")
+        else:
+            self.progress_status_label.setText("✅ 다운로드가 성공적으로 완료되었습니다!")
         self.progress_detail_label.setText("")
 
     def on_paste_link(self):
@@ -1484,15 +1672,28 @@ class YouTubeDownloaderWindow(QMainWindow):
             self.start_fetch_info()
 
     def on_download(self):
+        if self.is_downloading:
+            if self.current_downloader:
+                self.set_status("다운로드 중지 요청 중... 잠시만 기다려주세요.")
+                self.current_downloader.cancel()
+            return
+
         url = self.url_edit.text().strip()
-        is_valid, clean_url = validate_url(url)
+        is_valid, clean_url, is_playlist = validate_url(url)
         if not is_valid:
             QMessageBox.warning(self, "입력 오류", clean_url)
             return
 
+        self.is_playlist_mode = is_playlist
+        self.is_downloading = True
         self.complete_card.setVisible(False)
-        self.set_status("다운로드를 시작합니다...")
-        self.signals.download_btn_state.emit(False)
+        self.update_download_button_ui()
+
+        if is_playlist:
+            self.set_status("채널/재생목록 전체 동영상 순차 다운로드를 시작합니다...")
+        else:
+            self.set_status("다운로드를 시작합니다...")
+
         self.progress.setValue(0)
         self.progress_detail_label.setText("")
 
@@ -1507,15 +1708,20 @@ class YouTubeDownloaderWindow(QMainWindow):
                 progress_callback=lambda p: self.signals.progress.emit(p),
                 detailed_callback=lambda p, s, e, sz: self.signals.detailed_progress.emit(p, s, e, sz)
             )
+            self.current_downloader = downloader
             success = downloader.download(audio_only=audio_only)
             if success:
-                self.signals.status.emit("다운로드가 완료되었습니다.")
+                self.signals.status.emit("성공적으로 완료되었습니다.")
                 self.signals.complete.emit(str(downloader.downloaded_file or ""))
                 if self.config.get("auto_open_folder", False):
                     self.signals.open_folder.emit()
             else:
-                self.signals.status.emit("다운로드에 실패했습니다.")
+                if downloader._is_cancelled:
+                    self.signals.status.emit("다운로드가 중지되었습니다.")
+                else:
+                    self.signals.status.emit("다운로드에 실패했습니다.")
         finally:
+            self.current_downloader = None
             self.signals.download_btn_state.emit(True)
 
     def on_open_settings(self):
