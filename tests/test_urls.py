@@ -29,6 +29,33 @@ class URLValidationTests(unittest.TestCase):
             (True, 'https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=PL_123-abc&index=2'),
         )
 
+    def test_channel_videos_tab_is_supported(self):
+        for path in (
+            '@SomeChannel/videos',
+            'channel/UC1234567890abcdefghijkl/videos',
+            'c/SomeChannel/videos',
+            'user/SomeChannel/videos',
+        ):
+            url = f'https://www.youtube.com/{path}'
+            with self.subTest(url=url):
+                self.assertEqual(validate_url(url), (True, url))
+        # 후행 슬래시와 다른 호스트 변형도 정규화되어야 한다.
+        self.assertEqual(
+            validate_url('https://m.youtube.com/@SomeChannel/videos/'),
+            (True, 'https://www.youtube.com/@SomeChannel/videos'),
+        )
+
+    def test_channel_home_or_other_tabs_are_rejected(self):
+        for path in (
+            '@SomeChannel',
+            '@SomeChannel/featured',
+            '@SomeChannel/shorts',
+            'channel/UC1234567890abcdefghijkl',
+            'c/SomeChannel',
+        ):
+            with self.subTest(path=path):
+                self.assertFalse(validate_url(f'https://www.youtube.com/{path}')[0])
+
     def test_invalid_video_ids_and_unrelated_paths_are_rejected(self):
         for path in (
             'watch?v=dQw4w9WgXcQEXTRA',

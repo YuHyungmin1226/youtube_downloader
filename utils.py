@@ -152,6 +152,11 @@ def normalize_youtube_url(url):
         elif path == '/playlist':
             pass
         else:
+            channel_match = re.fullmatch(
+                r'/(@[\w.-]+|channel/[\w-]+|c/[\w.-]+|user/[\w.-]+)/videos', path
+            )
+            if channel_match:
+                return f'https://www.youtube.com/{channel_match.group(1)}/videos'
             match = re.fullmatch(r'/(?:shorts|embed|v|live)/([^/]+)', path)
             if not match:
                 return None

@@ -114,17 +114,17 @@ class SettingsDialog(QDialog):
         self.subtitle_lang_edit = QLineEdit(self.config.get("subtitle_language", "ko"))
         form_advanced.addRow("자막 언어 코드:", self.subtitle_lang_edit)
 
-        # 재생목록 다운로드
+        # 재생목록/채널 다운로드
         self.playlist_check = QCheckBox()
         self.playlist_check.setChecked(self.config.get("playlist_download", False))
-        form_advanced.addRow("재생목록 다운로드:", self.playlist_check)
+        form_advanced.addRow("재생목록/채널 다운로드:", self.playlist_check)
 
-        # 재생목록 최대 아이템 수
+        # 재생목록/채널 최대 아이템 수
         self.playlist_max_spin = QSpinBox()
         self.playlist_max_spin.setRange(1, 100)
         self.playlist_max_spin.setValue(self.config.get("max_playlist_items", 10))
-        form_advanced.addRow("재생목록 최대 영상 수:", self.playlist_max_spin)
-        
+        form_advanced.addRow("재생목록/채널 최대 영상 수:", self.playlist_max_spin)
+
         self.tab_widget.addTab(tab_advanced, "자막/재생목록")
 
         # ------------------ 탭 3: 보안 및 쿠키 ------------------
