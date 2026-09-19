@@ -27,10 +27,10 @@ class ConfigMigrationTests(unittest.TestCase):
             ):
                 config = Config()
 
-            self.assertEqual(config.get("player_client"), "tv_embedded")
+            self.assertEqual(config.get("player_client"), "")
             saved = json.loads(config_file.read_text(encoding="utf-8"))
             self.assertEqual(saved["config_version"], Config.CURRENT_CONFIG_VERSION)
-            self.assertEqual(saved["player_client"], "tv_embedded")
+            self.assertEqual(saved["player_client"], "")
 
     def test_version_two_android_client_is_migrated_to_recommended_client(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -50,7 +50,27 @@ class ConfigMigrationTests(unittest.TestCase):
             ):
                 config = Config()
 
-            self.assertEqual(config.get("player_client"), "tv_embedded")
+            self.assertEqual(config.get("player_client"), "")
+
+    def test_version_four_tv_embedded_client_is_migrated_to_auto(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home = Path(temp_dir)
+            config_file = home / ".youtube_downloader_config.json"
+            config_file.write_text(
+                json.dumps({
+                    "config_version": 4,
+                    "download_path": str(home / "Videos"),
+                    "player_client": "tv_embedded",
+                }),
+                encoding="utf-8",
+            )
+
+            with patch("config.Path.home", return_value=home), patch(
+                "config.platform.system", return_value="Darwin"
+            ):
+                config = Config()
+
+            self.assertEqual(config.get("player_client"), "")
 
     def test_current_web_client_selection_is_preserved(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -288,7 +308,7 @@ class YouTubeFallbackTests(unittest.TestCase):
     def test_fallback_sequence_reaches_android_for_web_profile(self):
         opts = {"extractor_args": {"youtube": {"player_client": ["web"]}}}
 
-        self.assertEqual(self.downloader._get_next_youtube_client(opts), "tv_embedded")
+        self.assertEqual(self.downloader._get_next_youtube_client(opts), "android_vr")
         Config.set_youtube_player_client(opts, "android_vr")
         self.assertEqual(self.downloader._get_next_youtube_client(opts), "android")
 

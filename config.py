@@ -8,9 +8,11 @@ import platform
 import re
 from urllib.parse import urlsplit, urlunsplit
 
+import pot_server
+
 class Config:
     """설정 관리 클래스"""
-    CURRENT_CONFIG_VERSION = 4
+    CURRENT_CONFIG_VERSION = 5
 
     def __init__(self):
         # Windows에서는 숨김 파일 대신 일반 파일로 저장
@@ -39,7 +41,7 @@ class Config:
             "use_po_token": False,
             "po_token": "",
             "visitor_data": "",
-            "player_client": "tv_embedded",
+            "player_client": "",
             "subtitle_download": False,
             "subtitle_language": "ko",
             "playlist_download": False,
@@ -83,6 +85,14 @@ class Config:
                         # 토큰 없이도 고화질을 제공하는 TV 호환 프로필로 전환한다.
                         if config.get("player_client") == "android_vr":
                             config["player_client"] = "tv_embedded"
+
+                    if config_version < 5:
+                        # tv_embedded가 yt-dlp에서 더 이상 지원되지 않는 클라이언트가
+                        # 되었고, 내장 PO Token 서버 덕분에 특정 클라이언트를
+                        # 강제하지 않아도 yt-dlp가 알아서 최적의 클라이언트를
+                        # 선택하므로 빈 값(자동)으로 되돌린다.
+                        if config.get("player_client") == "tv_embedded":
+                            config["player_client"] = ""
 
                     if config_version < self.CURRENT_CONFIG_VERSION:
                         config["config_version"] = self.CURRENT_CONFIG_VERSION
@@ -169,10 +179,10 @@ class Config:
         is_youtube: True면 YouTube 전용 extractor_args(po_token 등)를 포함"""
         quality_val = self.get_quality()
         preferred = self.get_preferred_quality()
-        player_client = self.get("player_client", "tv_embedded")
+        player_client = self.get("player_client", "")
         has_po_token = bool(
-            self.get("use_po_token", False)
-            and str(self.get("po_token", "")).strip()
+            (self.get("use_po_token", False) and str(self.get("po_token", "")).strip())
+            or pot_server.is_available()
         )
 
         if self.is_audio_only():
@@ -253,7 +263,7 @@ class Config:
                     # yt-dlp 2026.8+ requires the token context (for example
                     # android_vr.gvs) so the token is applied to the right
                     # Google Video Server request.
-                    player_client = self.get("player_client", "tv_embedded")
+                    player_client = self.get("player_client", "")
                     raw_token = str(self.get("po_token")).strip()
                     token_value = (
                         raw_token

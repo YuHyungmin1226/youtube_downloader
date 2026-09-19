@@ -90,6 +90,13 @@ def build_executable():
     print("YouTube 다운로더 빌드 시작...")
     data_separator = ';' if SYSTEM_NAME == 'Windows' else ':'
 
+    pot_provider_dir = Path(__file__).resolve().parent / 'pot_provider'
+    if not pot_provider_dir.exists():
+        raise SystemExit(
+            "pot_provider/ 디렉터리가 없습니다. "
+            "먼저 'python setup_pot_provider.py'를 실행해 PO Token 서버를 준비해주세요."
+        )
+
     # PyInstaller 명령어 구성
     cmd = [
         sys.executable, '-m', 'PyInstaller',
@@ -101,6 +108,8 @@ def build_executable():
         f'--add-data=utils.py{data_separator}.',        # 유틸리티 파일 포함
         f'--add-data=ffmpeg_installer.py{data_separator}.',  # FFmpeg 설치 파일 포함
         f'--add-data=settings_dialog.py{data_separator}.',   # 설정 창 포함
+        f'--add-data=pot_server.py{data_separator}.',   # PO Token 서버 관리 모듈 포함
+        f'--add-data=pot_provider{data_separator}pot_provider',  # PO Token 서버(Node.js 런타임 포함) 포함
         f'--add-data=icon.png{data_separator}.',        # 런타임 창 아이콘 포함
         '--hidden-import=PySide6.QtCore',
         '--hidden-import=PySide6.QtWidgets',
@@ -118,6 +127,9 @@ def build_executable():
         '--hidden-import=tempfile',
         '--hidden-import=urllib.request',
         '--hidden-import=urllib.parse',
+        '--hidden-import=yt_dlp_plugins.extractor.getpot_bgutil',
+        '--hidden-import=yt_dlp_plugins.extractor.getpot_bgutil_http',
+        '--hidden-import=yt_dlp_plugins.extractor.getpot_bgutil_script',
         '--collect-all=yt_dlp',
         'youtube_downloader.py'
     ]

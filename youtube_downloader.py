@@ -50,6 +50,7 @@ from PySide6.QtWidgets import (
 
 from config import Config
 from ffmpeg_installer import FFmpegInstaller
+import pot_server
 from settings_dialog import SettingsDialog
 from utils import check_ffmpeg_installed, open_folder, validate_url
 
@@ -118,9 +119,10 @@ STYLE = (
 class YouTubeDownloader:
     """비디오 다운로더 로직 클래스 (YouTube, Pornhub 등 yt-dlp 지원 사이트)"""
 
-    YOUTUBE_CLIENT_FALLBACK_ORDER = ("tv_embedded", "android_vr", "android")
-    # tv_embedded가 차단되면 PO Token이 필요할 수 있는 android_vr,
-    # 그 다음에 통합 스트림 호환용 android로 순차 재시도한다.
+    YOUTUBE_CLIENT_FALLBACK_ORDER = ("android_vr", "android")
+    # 기본값(빈 문자열)은 yt-dlp가 PO Token 서버와 함께 알아서 최적의
+    # 클라이언트를 선택하게 둔다. 그래도 실패하면 android_vr, 그 다음
+    # 통합 스트림 호환용 android로 순차 재시도한다.
     YOUTUBE_CLIENT_FALLBACK_ERRORS = (
         "http error 403",
         "requested format is not available",
@@ -176,6 +178,9 @@ class YouTubeDownloader:
             if self.status_callback:
                 self.status_callback("\nFFmpeg가 설치되어 있지 않습니다. 'FFmpeg 설치' 버튼을 눌러 설치해주세요.")
             return False
+
+        if getattr(self, "is_youtube", False):
+            self._ensure_pot_server()
 
         download_path = self.config.get_download_path()
         try:
@@ -294,6 +299,16 @@ class YouTubeDownloader:
 
         return False
 
+    def _ensure_pot_server(self):
+        """PO Token 서버가 떠 있는지 확인하고, 안 되어 있으면 실행한다."""
+        if not pot_server.is_available():
+            return
+        if self.status_callback:
+            self.status_callback("PO Token 서버 준비 중...")
+        if not pot_server.ensure_running():
+            if self.status_callback:
+                self.status_callback("PO Token 서버를 시작하지 못했습니다. 기본 방식으로 계속 진행합니다.")
+
     def _has_po_token(self):
         """현재 설정에 실제로 사용할 PO Token이 있는지 반환합니다."""
         return bool(
@@ -395,6 +410,8 @@ class YouTubeDownloader:
     def inspect_formats(self, player_client=None):
         """다운로드 없이 제공 포맷과 현재 설정의 선택 결과를 반환합니다."""
         self.validate_url()
+        if self.is_youtube:
+            self._ensure_pot_server()
         ydl_opts = self.config.get_ydl_opts(is_youtube=self.is_youtube)
         if self.is_youtube and player_client:
             Config.set_youtube_player_client(ydl_opts, player_client)
@@ -708,7 +725,10 @@ def run_headless_download(url, download_path=None):
     downloader = YouTubeDownloader(url, status_callback=print_status)
     if download_path:
         downloader.config.config["download_path"] = str(Path(download_path).expanduser())
-    return 0 if downloader.download_video() else 1
+    try:
+        return 0 if downloader.download_video() else 1
+    finally:
+        pot_server.shutdown()
 
 
 def run_headless_inspect(url, player_client=None):
@@ -718,6 +738,8 @@ def run_headless_inspect(url, player_client=None):
     except (ValueError, youtube_dl.utils.DownloadError) as exc:
         print(f"포맷 확인 실패: {exc}", flush=True)
         return 1
+    finally:
+        pot_server.shutdown()
 
     heights = ", ".join(f"{height}p" for height in result['available_heights'])
     selected = (
@@ -749,6 +771,7 @@ def main():
 
     app = QApplication(sys.argv)
     app.setStyleSheet(STYLE)
+    app.aboutToQuit.connect(pot_server.shutdown)
     win = YouTubeDownloaderWindow()
     win.show()
     sys.exit(app.exec())

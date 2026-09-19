@@ -188,6 +188,9 @@ release/*.zip
 release/*.app/
 *.exe
 
+# PO Token 제공 서버 (setup_pot_provider.py로 생성, 용량이 커서 커밋하지 않음)
+pot_provider/
+
 # IDE 설정
 .vscode/
 .idea/

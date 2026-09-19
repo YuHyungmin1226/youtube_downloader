@@ -70,12 +70,27 @@ def test_youtube_without_po_token_uses_stable_combined_format(config):
         use_po_token=False,
         po_token="",
     )
-    assert config.get_ydl_opts(is_youtube=True)["format"] == "best[height<=1080]/best"
+    with patch("config.pot_server.is_available", return_value=False):
+        assert config.get_ydl_opts(is_youtube=True)["format"] == "best[height<=1080]/best"
+
+
+def test_bundled_pot_server_unlocks_high_quality_without_manual_token(config):
+    config.config.update(
+        quality="best",
+        preferred_quality="1080p",
+        player_client="android_vr",
+        use_po_token=False,
+        po_token="",
+    )
+    with patch("config.pot_server.is_available", return_value=True):
+        assert config.get_ydl_opts(is_youtube=True)["format"] == (
+            "bestvideo*[height<=1080]+bestaudio/bestvideo*[height<=1080]"
+        )
 
 
 def test_default_youtube_profile_prioritizes_high_quality(config):
     opts = config.get_ydl_opts(is_youtube=True)
-    assert opts["extractor_args"]["youtube"]["player_client"] == ["tv_embedded"]
+    assert "extractor_args" not in opts
     assert opts["format"] == "bestvideo*[height<=1080]+bestaudio/bestvideo*[height<=1080]"
 
 
