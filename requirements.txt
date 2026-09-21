@@ -1,3 +1,9 @@
+# YouTube 다운로더 핵심 실행 의존성 (Core Runtime)
 PySide6>=6.5.0
 yt-dlp>=2024.0.0
 imageio-ffmpeg>=0.5.0
+truststore>=0.10.0
+
+# 빌드 및 실행 파일 패키징 (Build & Packaging)
+pyinstaller>=6.10.0
+Pillow>=10.0.0

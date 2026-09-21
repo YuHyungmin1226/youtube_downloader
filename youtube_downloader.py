@@ -1209,9 +1209,16 @@ class YouTubeDownloaderWindow(QMainWindow):
         self.is_playlist_mode = False
 
         # 아이콘 설정
-        icon_path = Path(__file__).resolve().parent / "icon.png"
-        if icon_path.exists():
-            self.setWindowIcon(QIcon(str(icon_path)))
+        meipass = getattr(sys, "_MEIPASS", None)
+        icon_candidates = [
+            Path(meipass) / "icon.png" if meipass else None,
+            Path(__file__).resolve().parent / "icon.png",
+            Path(sys.executable).resolve().parent / "icon.png" if getattr(sys, "frozen", False) else None,
+        ]
+        for ip in icon_candidates:
+            if ip and ip.exists():
+                self.setWindowIcon(QIcon(str(ip)))
+                break
 
         # 시그널 연결
         self.signals = SignalProxy()
