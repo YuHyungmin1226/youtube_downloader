@@ -3,8 +3,9 @@ setlocal
 cd /d "%~dp0"
 title YouTube Downloader
 
-:: Check if Python is installed and accessible
-where python >nul 2>nul
+:: Check that a working Python is installed
+:: (the Microsoft Store "python" alias exits with 9009, so it counts as not installed)
+python -c "import sys" >nul 2>nul
 if %errorlevel% neq 0 (
     echo [ERROR] Python is not installed or not added to PATH.
     echo Please install Python 3.10 or later from https://www.python.org/
@@ -13,11 +14,11 @@ if %errorlevel% neq 0 (
 )
 
 :: Check required dependencies and auto-install if missing
-python -c "import PySide6, yt_dlp, imageio_ffmpeg" >nul 2>nul
+:: (pip result is checked with "||" because %errorlevel% inside this block is expanded before pip runs)
+python -c "import PySide6, yt_dlp, yt_dlp_ejs, imageio_ffmpeg" >nul 2>nul
 if %errorlevel% neq 0 (
     echo [INFO] Installing required packages from requirements.txt...
-    python -m pip install -r requirements.txt
-    if %errorlevel% neq 0 (
+    python -m pip install -r requirements.txt || (
         echo [ERROR] Failed to install required dependencies.
         pause
         exit /b 1
